@@ -131,13 +131,13 @@ test('silent films encode the original dot opacity in both theme views, includin
   }
 })
 
-test('the film restores both SVG colors, holds the logo and carries its outline through the water loop', {
+test('one highlight reveals the SVG from left to right in both themes and leaves a steady logo above the loop', {
   skip: !hasImageMagick || !hasVideoTools || spawnSync('rsvg-convert', ['--version']).status !== 0,
 }, () => {
   const { width, height, x, y } = scene.wordmark
   const w = 3 * width, h = 3 * height, bytes = w * h * 4
   const svg = readFileSync(asset('harness-logo.svg'), 'utf8')
-  const middle = Math.round((scene.restoreStart + scene.settledFrame) / 2)
+  const sweepFrame = fraction => scene.restoreStart + Math.round(fraction * (scene.settledFrame - scene.restoreStart))
   for (const [half, fg, chip, bg] of [[0, '#0f1115', '#ffffff', [255, 255, 255]], [1, '#f9fafb', '#353638', [21, 21, 23]]]) {
     const logo = svg.replaceAll('var(--harness-logo-foreground, #F9FAFB)', fg)
       .replaceAll('var(--harness-logo-chip-text, #353638)', chip)
@@ -151,18 +151,49 @@ test('the film restores both SVG colors, holds the logo and carries its outline 
       assert.equal(decoded.length, frames.length * bytes)
       return frames.map((_, i) => decoded.subarray(i * bytes, (i + 1) * bytes))
     }
-    function meanDifference(mark) {
+    function meanDifference(mark, expected = reference, left = 0, right = w) {
       let error = 0
       for (let i = 0; i < bytes; i += 4) {
+        const column = i / 4 % w
+        if (column < left || column >= right) continue
         for (let c = 0; c < 3; c++) {
-          error += Math.abs((mark[i + c] - bg[c]) * mark[i + 3] - (reference[i + c] - bg[c]) * reference[i + 3]) / 255
+          error += Math.abs((mark[i + c] - bg[c]) * mark[i + 3] - (expected[i + c] - bg[c]) * expected[i + 3]) / 255
         }
       }
-      return error / (w * h * 3)
+      return error / ((right - left) * h * 3)
     }
-    const [dot, halfway, final, hold] = readMarks('pixel-opening.webm', [scene.restoreStart, middle, scene.settledFrame, scene.exitFrame])
-    const initialError = meanDifference(dot), middleError = meanDifference(halfway)
-    assert.ok(initialError > 10 && middleError < initialError * 0.8 && middleError > 2, 'the outlines develop between the two originals')
+    function highlight(mark) {
+      let energy = 0, moment = 0, secondMoment = 0
+      for (let i = 0; i < bytes; i += 4) {
+        const opacity = mark[i + 3] / 255
+        const blue = (mark[i + 2] - mark[i]) * opacity + (bg[2] - bg[0]) * (1 - opacity)
+        const weight = Math.max(0, blue - 55), x = (i / 4 % w) / w
+        energy += weight
+        moment += weight * x
+        secondMoment += weight * x * x
+      }
+      const center = energy ? moment / energy : 0
+      return { energy, center, spread: energy ? Math.sqrt(Math.max(0, secondMoment / energy - center * center)) : 0 }
+    }
+    const frames = Array.from({ length: scene.settledFrame - scene.restoreStart + 1 }, (_, i) => scene.restoreStart + i)
+    const marks = readMarks('pixel-opening.webm', [...frames, scene.exitFrame])
+    const dot = marks[0], final = marks.at(-2), hold = marks.at(-1)
+    assert.equal(highlight(dot).energy, 0)
+    let furthest = 0
+    const lights = marks.map(highlight)
+    for (const glint of lights.filter(light => light.energy > 1000)) {
+      assert.ok(glint.center >= furthest - 0.01, 'the light makes a single forward pass')
+      furthest = Math.max(furthest, glint.center)
+      assert.ok(glint.spread < 0.06, 'light is concentrated around one front')
+    }
+    for (const [fraction, position] of [[0.2, 0.15], [0.5, 0.51], [0.78, 0.83]]) {
+      const index = sweepFrame(fraction) - scene.restoreStart, frame = marks[index], glint = lights[index]
+      assert.ok(glint.energy > 1000, 'visible light on the mark')
+      assert.ok(Math.abs(glint.center - position) < 0.06, 'light follows the reveal across the lettering')
+      assert.ok(meanDifference(frame, final, 0, Math.floor(w * (position - 0.10))) < 1, 'swept strokes match the SVG')
+      assert.ok(meanDifference(frame, dot, Math.ceil(w * (position + 0.10)), w) < 1, 'pixels ahead of the light stay intact')
+    }
+    assert.equal(highlight(final).energy, 0)
     assert.ok(meanDifference(final) < 2, 'final video matches the actual SVG including badge lettering')
     assert.ok(final.equals(hold), 'wordmark remains fixed while the opening continues')
     for (const frame of readMarks('pixel-ripples.webm', [0, scene.frames - scene.loopStart - 1])) {

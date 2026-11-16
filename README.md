@@ -1,6 +1,6 @@
 # dsh-boot-whale
 
-A pixel whale leaps from the water as DeepSeek Harness opens. When it lands, the **deepseek HARNESS** wordmark rises through the splash for about 2.7 seconds. Above the waterline, the dot gaps close from left to right and the strokes take on the contours of the original SVG over 1.8 seconds. The finished logo stays visible for at least 720 ms before the ready workspace fades in. During longer loads, ripples continue beneath the stationary logo.
+A pixel whale leaps from the water as DeepSeek Harness opens. When it lands, the **deepseek HARNESS** wordmark rises through the splash for about 2.7 seconds. A narrow ice-blue highlight sweeps once from the whale icon on the left to the HARNESS badge on the right over 1.8 seconds. The letters ahead of the light keep their dots. Behind it, the strokes have the smooth contours of the original SVG. The finished logo stays visible for at least 720 ms before the ready workspace fades in. During longer loads, ripples continue beneath the stationary logo.
 
 The scene fits the window and follows DSH’s light or dark background. The browser plays the whale, water and lettering as a silent transparent video while client plugins initialize. At the end of the transition, an SVG at the same position keeps the logo sharp at any window size. Reduced motion and video failures display that SVG immediately. A DSH startup failure immediately reveals its error report.
 
