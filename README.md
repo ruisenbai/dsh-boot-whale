@@ -1,6 +1,6 @@
 # dsh-boot-whale
 
-A full-screen dot whale opening for DeepSeek Harness. The animation contains no text. If the application is still loading when the whale finishes, a redesigned **DeepSeek / HARNESS** wordmark stays on screen until the main interface is ready. A fast launch shows the whole whale and then fades into the interface. Light and dark themes, narrow windows, and reduced-motion settings are supported; startup failures reveal DSH's own error report.
+A full-screen dot whale opening for DeepSeek Harness. The animation contains no text. If the application is still loading when the whale finishes, a redesigned **DeepSeek / HARNESS** wordmark stays on screen until the main interface is ready. A fast launch shows the whole whale and then fades into the interface. Its background follows DSH's light or dark application fill. Narrow windows and reduced-motion settings are supported; startup failures reveal DSH's own error report.
 
 ## Install
 

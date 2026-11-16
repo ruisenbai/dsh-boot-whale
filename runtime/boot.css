@@ -7,7 +7,7 @@
   display: grid;
   place-items: center;
   overflow: hidden;
-  background: radial-gradient(ellipse 85% 72% at 50% 40%, #fff 0%, #f1f6fc 70%, #e8f0f9 100%);
+  background: var(--dsw-alias-bg-base, var(--dsh-boot-bg, #fff));
   color: var(--dsbw-ink);
   opacity: 1;
   transition: opacity 380ms ease;
@@ -16,7 +16,7 @@
 body[data-ds-dark-theme] .dsbw-boot {
   --dsbw-ink: #edf5ff;
   --dsbw-accent: #77b9ff;
-  background: radial-gradient(ellipse 85% 72% at 50% 40%, #15283d 0%, #0b1726 70%, #07101c 100%);
+  background: var(--dsw-alias-bg-base, var(--dsh-boot-bg, #151517));
 }
 
 .dsbw-boot[data-phase="leaving"] {
