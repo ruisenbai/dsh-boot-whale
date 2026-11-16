@@ -35,11 +35,13 @@ function film(name) {
 
 const opening = film('pixel-opening')
 const ripples = film('pixel-ripples')
-const { fps, settledFrame, exitFrame } = JSON.parse(readFileSync(new URL('./assets/pixel-rise.json', import.meta.url)))
+const { fps, settledFrame, exitFrame, wordmark, width, height } =
+  JSON.parse(readFileSync(new URL('./assets/pixel-rise.json', import.meta.url)))
 const artwork = { opening: opening.path, ripples: ripples.path, settledAt: settledFrame / fps, exitAt: exitFrame / fps }
-const still = readFileSync(new URL('./assets/pixel-wordmark.png', import.meta.url)).toString('base64')
+const logo = readFileSync(new URL('./assets/harness-logo.svg', import.meta.url), 'utf8')
 const stylesheet = readFileSync(new URL('./runtime/boot.css', import.meta.url), 'utf8')
-const css = stylesheet + '\n.dsbw-still { mask-image: url("data:image/png;base64,' + still + '"); }'
+const css = stylesheet + '\n.dsbw-still { left: ' + (100 * wordmark.x / width) + '%; top: ' + (100 * wordmark.y / height) +
+  '%; width: ' + (100 * wordmark.width / width) + '%; height: ' + (100 * wordmark.height / height) + '%; }'
 const script = readFileSync(new URL('./runtime/boot.js', import.meta.url), 'utf8')
 
 if (/<\/style/iu.test(css) || /<\/script/iu.test(script)) {
@@ -51,6 +53,7 @@ export function apply(ctx) {
   ctx.on('webserver/index-inject', table => {
     table.push({ kind: 'style', text: css })
     table.push({ kind: 'global', name: '__DSH_BOOT_WHALE_ARTWORK__', value: artwork })
+    table.push({ kind: 'html', placement: 'body', html: '<template id="dsbw-logo-template">' + logo + '</template>' })
     table.push({ kind: 'script', placement: 'body', text: script })
   })
   ctx.inject(['webServer'], child => {

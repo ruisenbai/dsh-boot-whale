@@ -20,7 +20,9 @@ test('the reference scene, loop and static dot grid have matching dimensions and
   const packed = webp.readUInt32LE(21)
   assert.equal(1 + (packed & 0x3fff), atlasWidth)
   assert.equal(1 + ((packed >>> 14) & 0x3fff), atlasHeight)
-  assert.ok(0 < scene.settledFrame && scene.settledFrame < scene.exitFrame && scene.exitFrame < scene.loopStart)
+  assert.ok(0 < scene.pixelSettledFrame && scene.pixelSettledFrame < scene.restoreStart)
+  assert.equal((scene.settledFrame - scene.restoreStart) / scene.fps, 1.8)
+  assert.ok(scene.settledFrame < scene.loopStart && scene.exitFrame < scene.frames)
   assert.equal((scene.exitFrame - scene.settledFrame) / scene.fps, 0.72)
   assert.equal((scene.frames - scene.loopStart) / scene.fps, 2.4)
 })
@@ -57,10 +59,10 @@ test('the ascent matches the whale and waiting water never moves the pixel lette
       .filter(y => band.subarray((y - 58) * 44, (y - 57) * 44).some(v => v > 240))
   }
   const emerging = inkRows(34 + 44)
-  const settled = inkRows(scene.settledFrame)
+  const settled = inkRows(scene.pixelSettledFrame)
   assert.ok(emerging.length > 0 && settled.length > 0)
   assert.ok(emerging[0] >= settled[0] + 12)
-  const steady = region(scene.settledFrame, 48, 60, 164, 20)
+  const steady = region(scene.pixelSettledFrame, 48, 60, 164, 20)
   assert.ok(steady.some(v => v >= 250))
   for (let y = 0; y < 20; y++) {
     for (let x = 0; x < 164; x++) assert.equal(still[(60 + y) * 3 * scene.width * 3 + (48 + x) * 3], steady[y * 164 + x])
@@ -85,7 +87,7 @@ test('silent films encode the original dot opacity in both theme views, includin
     { maxBuffer: 24 * 1024 * 1024 })
   const width = scene.width * 3, height = scene.height * 3, area = width * height
   for (const [name, offset, count, selected] of [
-    ['pixel-opening', 0, scene.loopStart, [0, 21, 49, 80, scene.settledFrame, scene.loopStart - 1]],
+    ['pixel-opening', 0, scene.frames, [0, 21, 49, 80, scene.restoreStart, scene.settledFrame, scene.frames - 1]],
     ['pixel-ripples', scene.loopStart, scene.frames - scene.loopStart, [0, 29, 59]],
   ]) {
     const path = fileURLToPath(asset(name + '.webm'))
@@ -117,7 +119,54 @@ test('silent films encode the original dot opacity in both theme views, includin
           expected[y * width + x] = Math.round(dot * [1, 0.4, 40 / 255][edge])
         }
       }
-      assert.ok(light.equals(expected), name + ' reproduces dot coverage at frame ' + frame)
+      if (frame > scene.restoreStart) {
+        const { x, y, width: w, height: h } = scene.wordmark
+        for (let row = 3 * y; row < 3 * (y + h); row++) {
+          const start = row * width + 3 * x
+          light.copy(expected, start, start, start + 3 * w)
+        }
+      }
+      assert.ok(light.equals(expected), name + ' retains the original whale and water at frame ' + frame)
+    }
+  }
+})
+
+test('the film restores both SVG colors, holds the logo and carries its outline through the water loop', {
+  skip: !hasImageMagick || !hasVideoTools || spawnSync('rsvg-convert', ['--version']).status !== 0,
+}, () => {
+  const { width, height, x, y } = scene.wordmark
+  const w = 3 * width, h = 3 * height, bytes = w * h * 4
+  const svg = readFileSync(asset('harness-logo.svg'), 'utf8')
+  const middle = Math.round((scene.restoreStart + scene.settledFrame) / 2)
+  for (const [half, fg, chip, bg] of [[0, '#0f1115', '#ffffff', [255, 255, 255]], [1, '#f9fafb', '#353638', [21, 21, 23]]]) {
+    const logo = svg.replaceAll('var(--harness-logo-foreground, #F9FAFB)', fg)
+      .replaceAll('var(--harness-logo-chip-text, #353638)', chip)
+    const png = execFileSync('rsvg-convert', ['-w', String(w), '-h', String(h)], { input: logo })
+    const reference = execFileSync('magick', ['png:-', '-depth', '8', 'rgba:-'], { input: png })
+    function readMarks(file, frames) {
+      const select = "select='" + frames.map(i => 'eq(n,' + i + ')').join('+') + "'"
+      const decoded = execFileSync('ffmpeg', ['-v', 'error', '-c:v', 'libvpx-vp9', '-i', fileURLToPath(asset(file)),
+        '-vf', select + ',format=rgba,crop=' + [w, h, x * 3, (y + half * scene.height) * 3].join(':'),
+        '-fps_mode', 'passthrough', '-f', 'rawvideo', '-pix_fmt', 'rgba', 'pipe:1'], { maxBuffer: frames.length * bytes })
+      assert.equal(decoded.length, frames.length * bytes)
+      return frames.map((_, i) => decoded.subarray(i * bytes, (i + 1) * bytes))
+    }
+    function meanDifference(mark) {
+      let error = 0
+      for (let i = 0; i < bytes; i += 4) {
+        for (let c = 0; c < 3; c++) {
+          error += Math.abs((mark[i + c] - bg[c]) * mark[i + 3] - (reference[i + c] - bg[c]) * reference[i + 3]) / 255
+        }
+      }
+      return error / (w * h * 3)
+    }
+    const [dot, halfway, final, hold] = readMarks('pixel-opening.webm', [scene.restoreStart, middle, scene.settledFrame, scene.exitFrame])
+    const initialError = meanDifference(dot), middleError = meanDifference(halfway)
+    assert.ok(initialError > 10 && middleError < initialError * 0.8 && middleError > 2, 'the outlines develop between the two originals')
+    assert.ok(meanDifference(final) < 2, 'final video matches the actual SVG including badge lettering')
+    assert.ok(final.equals(hold), 'wordmark remains fixed while the opening continues')
+    for (const frame of readMarks('pixel-ripples.webm', [0, scene.frames - scene.loopStart - 1])) {
+      assert.ok(frame.equals(final), 'opening and loop have the same final logo')
     }
   }
 })

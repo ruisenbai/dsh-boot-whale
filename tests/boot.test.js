@@ -4,7 +4,9 @@ import { test } from 'node:test'
 import vm from 'node:vm'
 
 const runtime = readFileSync(new URL('../runtime/boot.js', import.meta.url), 'utf8')
-const art = { opening: '/opening.webm', ripples: '/ripples.webm', settledAt: 4.96, exitAt: 5.68 }
+const geometry = JSON.parse(readFileSync(new URL('../assets/pixel-rise.json', import.meta.url)))
+const art = { opening: '/opening.webm', ripples: '/ripples.webm',
+  settledAt: geometry.settledFrame / geometry.fps, exitAt: geometry.exitFrame / geometry.fps }
 
 function scene({ desktop = false, reduced = false, rejectPlay = false } = {}) {
   let clock = 0, id = 0, shown, check
@@ -35,7 +37,7 @@ function scene({ desktop = false, reduced = false, rejectPlay = false } = {}) {
     pause() { this.pauses++ }
     load() { this.loads++ }
     time(seconds) { this.currentTime = seconds; this.dispatchEvent(new Event('timeupdate')) }
-    end() { this.ended = true; this.time(7.28); this.dispatchEvent(new Event('ended')) }
+    end() { this.ended = true; this.time(geometry.frames / geometry.fps); this.dispatchEvent(new Event('ended')) }
     fail() { this.error = {}; this.dispatchEvent(new Event('error')) }
   }
   class MutationObserver {
@@ -44,10 +46,12 @@ function scene({ desktop = false, reduced = false, rejectPlay = false } = {}) {
     disconnect() { check = undefined }
   }
   const root = new Element(), boot = new Element()
+  const svg = new Element()
+  const template = { content: { cloneNode(deep) { assert.equal(deep, true); return svg } } }
   boot.setAttribute('data-dsh-boot', '')
   root.append(boot)
   const document = Object.assign(new EventTarget(), {
-    body: new Element(), hidden: false, getElementById: id => id === 'root' ? root : null,
+    body: new Element(), hidden: false, getElementById: id => ({ root, 'dsbw-logo-template': template })[id],
     createElement(tag) {
       if (tag !== 'video') return new Element()
       const video = new Video(); videos.push(video); return video
@@ -65,7 +69,7 @@ function scene({ desktop = false, reduced = false, rejectPlay = false } = {}) {
   vm.runInNewContext(runtime, globals)
   return {
     layer: document.body.children[0], stage: document.body.children[0].children[0], body: document.body,
-    opening: videos[0], ripples: videos[1], motion,
+    opening: videos[0], ripples: videos[1], motion, svg,
     show() { shown() },
     ready() { root.children = [new Element()]; check?.() },
     fail() { boot.setAttribute('data-dsh-boot-failed', ''); check?.() },
@@ -91,6 +95,10 @@ test('each new desktop document starts once from frame zero after its window sig
     assert.equal(s.opening.currentTime, 0)
     assert.equal(s.opening.plays, 1)
     assert.ok(s.opening.muted && s.opening.defaultMuted && s.opening.playsInline)
+    s.opening.time(geometry.restoreStart / geometry.fps + 0.9)
+    assert.equal(s.layer.dataset.phase, 'opening', 'video remains visible throughout the contour transition')
+    s.opening.time(art.settledAt - 0.01)
+    assert.equal(s.layer.dataset.phase, 'opening')
     s.opening.time(art.settledAt)
     assert.equal(s.layer.dataset.phase, 'brand')
     s.opening.time(art.exitAt - 0.01)
@@ -136,6 +144,7 @@ test('slow starts preload the water, display the last opening frame until loop p
 test('reduced motion requests no moving media and holds the embedded still', () => {
   const s = scene({ reduced: true })
   assert.equal(s.layer.dataset.still, '')
+  assert.equal(s.stage.children.at(-1).children[0], s.svg)
   assert.equal(s.opening.src, undefined)
   assert.equal(s.ripples.src, undefined)
   s.ready(); s.step(719)

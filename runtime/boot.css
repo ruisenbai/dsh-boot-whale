@@ -1,20 +1,22 @@
 .dsbw-boot {
-  --dsbw-ink: #11263b;
+  --dsbw-surface: var(--dsw-alias-bg-base, var(--dsh-boot-bg, #fff));
+  --harness-logo-foreground: #0f1115;
+  --harness-logo-chip-text: #fff;
   position: fixed;
   inset: 0;
   z-index: 2147483000;
   display: grid;
   place-items: center;
   overflow: hidden;
-  background: var(--dsw-alias-bg-base, var(--dsh-boot-bg, #fff));
-  color: var(--dsbw-ink);
+  background: var(--dsbw-surface);
   opacity: 1;
   transition: opacity 380ms ease;
 }
 
 body[data-ds-dark-theme] .dsbw-boot {
-  --dsbw-ink: #edf5ff;
-  background: var(--dsw-alias-bg-base, var(--dsh-boot-bg, #151517));
+  --dsbw-surface: var(--dsw-alias-bg-base, var(--dsh-boot-bg, #151517));
+  --harness-logo-foreground: #f9fafb;
+  --harness-logo-chip-text: #353638;
 }
 
 .dsbw-stage {
@@ -26,16 +28,11 @@ body[data-ds-dark-theme] .dsbw-boot {
   user-select: none;
 }
 
-.dsbw-film,
-.dsbw-still {
+.dsbw-film {
   position: absolute;
   inset: 0;
   width: 100%;
-  height: 100%;
   image-rendering: pixelated;
-}
-
-.dsbw-film {
   height: 200%;
   object-fit: fill;
   transform: translateZ(0);
@@ -47,14 +44,19 @@ body[data-ds-dark-theme] .dsbw-film { transform: translate3d(0, -50%, 0); }
 .dsbw-stage[data-looping] .dsbw-film:first-child { visibility: hidden; }
 
 .dsbw-still {
+  position: absolute;
   display: none;
-  background: currentColor;
-  mask-size: 100% 100%;
-  mask-repeat: no-repeat;
+  background: var(--dsbw-surface);
+}
+
+.dsbw-still svg {
+  display: block;
+  width: 100%;
+  height: 100%;
 }
 
 .dsbw-boot[data-still] .dsbw-film { display: none; }
-.dsbw-boot[data-still] .dsbw-still { display: block; }
+.dsbw-boot:not([data-phase="opening"]) .dsbw-still { display: block; }
 
 .dsbw-boot[data-phase="leaving"] {
   opacity: 0;

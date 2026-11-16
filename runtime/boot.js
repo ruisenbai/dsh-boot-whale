@@ -1,7 +1,8 @@
 /* The opening is injected before the client framework is available. */
 (() => {
   const art = globalThis.__DSH_BOOT_WHALE_ARTWORK__
-  if (!art || !document.body || globalThis.__DSH_BOOT_WHALE_STARTED__) return
+  const logo = document.getElementById('dsbw-logo-template')
+  if (!art || !document.body || !logo || globalThis.__DSH_BOOT_WHALE_STARTED__) return
   globalThis.__DSH_BOOT_WHALE_STARTED__ = true
 
   const overlay = document.createElement('div')
@@ -14,6 +15,8 @@
   stage.setAttribute('aria-label', 'DeepSeek Harness')
   const still = document.createElement('div')
   still.className = 'dsbw-still'
+  still.setAttribute('aria-hidden', 'true')
+  still.append(logo.content.cloneNode(true))
 
   function film() {
     const video = document.createElement('video')
@@ -124,7 +127,7 @@
   // Video keeps its own presentation clock while startup JavaScript occupies the UI thread.
   function syncOpening() {
     if (disposed || overlay.dataset.still !== undefined || overlay.dataset.phase === 'leaving') return
-    if (opening.currentTime >= art.settledAt) overlay.dataset.phase = 'brand'
+    if (opening.currentTime >= art.settledAt && overlay.dataset.phase === 'opening') overlay.dataset.phase = 'brand'
     if (opening.currentTime < art.exitAt) return
     canLeave = true
     if (!appReady && !ripples.hasAttribute('src')) ripples.src = art.ripples

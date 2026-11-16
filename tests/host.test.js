@@ -23,14 +23,17 @@ function install() {
 
 test('the early document receives media URLs, timing and an embedded static wordmark', () => {
   const { routes, rows } = install()
-  assert.deepEqual(rows.map(row => row.kind), ['style', 'global', 'script'])
-  const [style, art, script] = rows
+  assert.deepEqual(rows.map(row => row.kind), ['style', 'global', 'html', 'script'])
+  const [style, art, template, script] = rows
   const { fps, settledFrame, exitFrame } = JSON.parse(readFileSync(new URL('../assets/pixel-rise.json', import.meta.url)))
   assert.equal(art.name, '__DSH_BOOT_WHALE_ARTWORK__')
   assert.deepEqual(art.value, { opening: routes[0].path, ripples: routes[1].path,
     settledAt: settledFrame / fps, exitAt: exitFrame / fps })
-  const still = readFileSync(new URL('../assets/pixel-wordmark.png', import.meta.url))
-  assert.ok(style.text.includes('data:image/png;base64,' + still.toString('base64')))
+  const logo = readFileSync(new URL('../assets/harness-logo.svg', import.meta.url), 'utf8')
+  assert.equal(template.html, '<template id="dsbw-logo-template">' + logo + '</template>')
+  assert.equal(template.placement, 'body')
+  assert.match(style.text, /left: 20\.3125%;/)
+  assert.match(style.text, /width: 60\.9375%;/)
   assert.equal(script.placement, 'body')
   assert.match(script.text, /data-dsh-boot-failed/)
 })

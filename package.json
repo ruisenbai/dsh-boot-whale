@@ -1,6 +1,6 @@
 {
   "name": "dsh-boot-whale",
-  "version": "0.1.5",
+  "version": "0.1.6",
   "description": "A pixel whale breaches and lifts the DeepSeek Harness wordmark out of the water",
   "type": "module",
   "main": "./index.js",
@@ -15,7 +15,7 @@
     "assets/pixel-opening.webm",
     "assets/pixel-ripples.webm",
     "assets/pixel-rise.json",
-    "assets/pixel-wordmark.png",
+    "assets/harness-logo.svg",
     "README.md",
     "LICENSE"
   ],

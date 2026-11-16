@@ -1,8 +1,9 @@
 /** Render the reference dot grid, transparent playback films and reduced-motion wordmark. */
 import { execFileSync } from 'node:child_process'
-import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
+import { createWordmarkTransition, themeInks } from './wordmark-transition.mjs'
 
 const assets = new URL('../assets/', import.meta.url)
 const asset = name => new URL(name, assets)
@@ -17,12 +18,14 @@ const riseDuration = 2.7
 const fps = 25
 // The approved landing starts at source frame 40. Prepend the original ascent at its own cadence.
 const ascentFrames = Math.ceil((40 - sourceWhale.first) * sourceWhale.step * fps)
-const settledFrame = ascentFrames + Math.ceil((riseStart + riseDuration + 0.18) * fps)
+const pixelSettledFrame = ascentFrames + Math.ceil((riseStart + riseDuration + 0.18) * fps)
+const restoreStart = pixelSettledFrame + Math.round(0.16 * fps)
+const settledFrame = restoreStart + Math.round(1.8 * fps)
 const loopPeriod = 2.4
 const loopStartTime = 5.92
 const loopStart = ascentFrames + Math.round(loopStartTime * fps)
 const scene = {
-  width, height, columns: 16, fps, settledFrame,
+  width, height, columns: 16, wordmark, fps, pixelSettledFrame, restoreStart, settledFrame,
   exitFrame: settledFrame + Math.round(0.72 * fps),
   loopStart, frames: loopStart + Math.round(loopPeriod * fps),
 }
@@ -262,19 +265,55 @@ function staticWordmark(coverage) {
   return encodeMask(dotGrid(cells), width * 3, height * 3, ['-define', 'png:exclude-chunks=date,time', 'png:-'])
 }
 
+function prepareFilm(cells) {
+  const scale = 3, stride = width * scale
+  const patchWidth = wordmark.width * scale, patchHeight = wordmark.height * scale
+  const original = readFileSync(asset('harness-logo.svg'), 'utf8')
+  const svg = original.replaceAll('var(--harness-logo-foreground, #F9FAFB)', '#fff')
+    .replaceAll('var(--harness-logo-chip-text, #353638)', '#000')
+  const png = imageTool('rsvg-convert', ['-w', String(patchWidth), '-h', String(patchHeight)], svg)
+  const vector = imageTool('magick', ['png:-', '-depth', '8', 'rgba:-'], png)
+  const stamp = Buffer.concat(Array.from({ length: wordmark.height }, (_, y) => {
+    const offset = (wordmark.y + y) * width + wordmark.x
+    return cells[pixelSettledFrame].subarray(offset, offset + wordmark.width)
+  }))
+  const render = createWordmarkTransition(stamp, wordmark, scale, vector)
+  const early = render(0), complete = render(1)
+  return cells.map((grid, index) => {
+    const alpha = dotGrid(grid)
+    if (index <= restoreStart) return { alpha, colors: early.colors }
+    const mark = index >= settledFrame ? complete : render((index - restoreStart) / (settledFrame - restoreStart))
+    for (let y = 0; y < patchHeight; y++) {
+      const offset = (wordmark.y * scale + y) * stride + wordmark.x * scale
+      mark.alpha.copy(alpha, offset, y * patchWidth, (y + 1) * patchWidth)
+    }
+    return { alpha, colors: mark.colors }
+  })
+}
+
 function encodeFilm(frames, path) {
   const size = (width * 3) + 'x' + (height * 3)
+  const patchWidth = wordmark.width * 3, patchHeight = wordmark.height * 3
+  const x = wordmark.x * 3, y = wordmark.y * 3
+  const patchFile = path + '.rgb'
+  writeFileSync(patchFile, Buffer.concat(frames.map(f => f.colors)))
   // Both theme colors share a clock. CSS crops the matching half even during a theme change.
-  const colors = 'color=c=0x11263b:s=' + size + ':r=' + fps + '[light];' +
-    'color=c=0xedf5ff:s=' + size + ':r=' + fps + '[dark];[light][dark]vstack'
+  const background = theme => 'color=c=0x' + Buffer.from(theme.dots).toString('hex') + ':s=' + size + ':r=' + fps
+  const colors = background(themeInks[0]) + '[light];' + background(themeInks[1]) + '[dark];[light][dark]vstack'
   imageTool('ffmpeg', ['-hide_banner', '-loglevel', 'error', '-y',
     '-f', 'rawvideo', '-pixel_format', 'gray', '-video_size', size, '-framerate', String(fps), '-i', 'pipe:0',
-    '-f', 'lavfi', '-i', colors, '-filter_complex',
-    '[0:v]split[a][b];[a][b]vstack[alpha];[1:v][alpha]alphamerge,format=yuva420p[film]',
+    '-f', 'lavfi', '-i', colors,
+    '-f', 'rawvideo', '-pixel_format', 'rgb24', '-video_size', patchWidth + 'x' + (2 * patchHeight),
+    '-framerate', String(fps), '-i', patchFile, '-filter_complex_threads', '2', '-filter_complex',
+    '[0:v]split[a][b];[a][b]vstack[alpha];[2:v]split[l][d];' +
+    '[l]crop=' + patchWidth + ':' + patchHeight + ':0:0[light];' +
+    '[d]crop=' + patchWidth + ':' + patchHeight + ':0:' + patchHeight + '[dark];' +
+    '[1:v][light]overlay=' + x + ':' + y + '[upper];' +
+    '[upper][dark]overlay=' + x + ':' + (y + height * 3) + '[rgb];[rgb][alpha]alphamerge,format=yuva420p[film]',
     '-map', '[film]', '-frames:v', String(frames.length), '-an', '-c:v', 'libvpx-vp9',
     '-lossless', '1', '-auto-alt-ref', '0', '-g', String(fps), '-deadline', 'good', '-cpu-used', '6',
     '-threads', '2', '-fflags', '+bitexact', '-flags:v', '+bitexact', '-map_metadata', '-1', path],
-  Buffer.concat(frames))
+  Buffer.concat(frames.map(f => f.alpha)))
   return readFileSync(path)
 }
 
@@ -286,10 +325,10 @@ function generate() {
   const atlasWidth = width * scene.columns
   const atlasHeight = height * Math.ceil(scene.frames / scene.columns)
   const atlas = Buffer.alloc(atlasWidth * atlasHeight)
-  const frames = []
+  const cells = []
   for (let index = 0; index < scene.frames; index++) {
     const frame = renderFrame(index, whale, coverage)
-    frames.push(dotGrid(frame))
+    cells.push(frame)
     const start = Math.floor(index / scene.columns) * height * atlasWidth + index % scene.columns * width
     for (let y = 0; y < height; y++) frame.copy(atlas, start + y * atlasWidth, y * width, (y + 1) * width)
   }
@@ -300,18 +339,18 @@ function generate() {
   ])
   const temporary = mkdtempSync(join(tmpdir(), 'dsbw-encode-'))
   try {
-    for (const [name, segment] of [['pixel-opening.webm', frames.slice(0, scene.loopStart)], ['pixel-ripples.webm', frames.slice(scene.loopStart)]]) {
+    const frames = prepareFilm(cells)
+    // One full idle-water cycle after the reveal leaves time to buffer the identically phased loop.
+    for (const [name, segment] of [['pixel-opening.webm', frames], ['pixel-ripples.webm', frames.slice(scene.loopStart)]]) {
       outputs.set(name, encodeFilm(segment, join(temporary, name)))
     }
   } finally {
     rmSync(temporary, { recursive: true, force: true })
   }
   for (const [name, data] of outputs) {
-    if (process.argv.includes('--check')) {
-      if (!readFileSync(asset(name)).equals(data)) throw new Error('Regenerate ' + name)
-    } else {
-      writeFileSync(asset(name), data)
-    }
+    if (existsSync(asset(name)) && readFileSync(asset(name)).equals(data)) continue
+    if (process.argv.includes('--check')) throw new Error('Regenerate ' + name)
+    writeFileSync(asset(name), data)
   }
 }
 

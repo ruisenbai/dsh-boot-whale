@@ -2,9 +2,17 @@
   "width": 256,
   "height": 144,
   "columns": 16,
+  "wordmark": {
+    "x": 52,
+    "y": 60,
+    "width": 156,
+    "height": 20
+  },
   "fps": 25,
-  "settledFrame": 124,
-  "exitFrame": 142,
+  "pixelSettledFrame": 124,
+  "restoreStart": 128,
+  "settledFrame": 173,
+  "exitFrame": 191,
   "loopStart": 182,
   "frames": 242
 }
