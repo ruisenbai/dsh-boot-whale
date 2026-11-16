@@ -1,7 +1,5 @@
 .dsbw-boot {
   --dsbw-ink: #11263b;
-  --harness-logo-foreground: var(--dsw-alias-label-primary, #0f1115);
-  --harness-logo-chip-text: #fff;
   position: fixed;
   inset: 0;
   z-index: 2147483000;
@@ -16,69 +14,39 @@
 
 body[data-ds-dark-theme] .dsbw-boot {
   --dsbw-ink: #edf5ff;
-  --harness-logo-foreground: var(--dsw-alias-label-primary, #f9fafb);
-  --harness-logo-chip-text: #353638;
   background: var(--dsw-alias-bg-base, var(--dsh-boot-bg, #151517));
 }
+
+.dsbw-stage {
+  width: min(1200px, 100vw, 177.7778vh);
+  aspect-ratio: 16 / 9;
+  position: relative;
+  pointer-events: none;
+  user-select: none;
+}
+
+.dsbw-scene,
+.dsbw-still {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  image-rendering: pixelated;
+}
+
+.dsbw-still {
+  display: none;
+  background: currentColor;
+  mask-size: 100% 100%;
+  mask-repeat: no-repeat;
+}
+
+.dsbw-boot[data-still] .dsbw-scene { display: none; }
+.dsbw-boot[data-still] .dsbw-still { display: block; }
 
 .dsbw-boot[data-phase="leaving"] {
   opacity: 0;
   pointer-events: none;
-}
-
-.dsbw-whale,
-.dsbw-brand {
-  grid-area: 1 / 1;
-}
-
-.dsbw-whale {
-  display: block;
-  width: min(1200px, 94vw, 120vh);
-  aspect-ratio: 16 / 9;
-  color: var(--dsbw-ink);
-  opacity: 0.95;
-  pointer-events: none;
-}
-
-.dsbw-brand {
-  width: min(336px, 80vw);
-  opacity: 0;
-  visibility: hidden;
-  user-select: none;
-}
-
-.dsbw-brand svg {
-  display: block;
-  width: 100%;
-  height: auto;
-}
-
-.dsbw-boot[data-phase="crossfade"] .dsbw-whale {
-  opacity: 0;
-}
-
-.dsbw-boot:is([data-phase="brand"], [data-phase="leaving"]) .dsbw-whale {
-  display: none;
-}
-
-.dsbw-boot:not([data-phase="opening"]) .dsbw-brand {
-  opacity: 1;
-  visibility: visible;
-}
-
-@keyframes dsbw-brand-breathe {
-  0%, 100% { opacity: 1; transform: scale(1); }
-  50% { opacity: 0.55; transform: scale(0.95); }
-}
-
-@media (prefers-reduced-motion: no-preference) {
-  .dsbw-boot[data-phase="crossfade"] :is(.dsbw-whale, .dsbw-brand) {
-    transition: opacity var(--dsbw-crossfade-duration) ease-out;
-  }
-
-  .dsbw-boot:is([data-phase="brand"], [data-phase="leaving"]) .dsbw-brand svg {
-    animation: dsbw-brand-breathe var(--dsbw-breath-duration) ease-in-out infinite;
-  }
 }
 
 @media (prefers-reduced-motion: reduce) {

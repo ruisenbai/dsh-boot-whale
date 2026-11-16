@@ -1,8 +1,10 @@
 import assert from 'node:assert/strict'
+import { createHash } from 'node:crypto'
+import { readFileSync } from 'node:fs'
 import { test } from 'node:test'
 import { apply } from '../index.js'
 
-test('injects the scalable wordmark before client boot and serves the atlas', () => {
+test('embeds the static wordmark and serves a content-addressed opacity atlas before client boot', () => {
   let collect
   let route
   const dispose = () => {}
@@ -21,18 +23,16 @@ test('injects the scalable wordmark before client boot and serves the atlas', ()
 
   const table = []
   collect(table)
-  assert.deepEqual(table.map(row => row.kind), ['style', 'html', 'script'])
-  const [style, logo, runtime] = table
-  assert.equal(logo.placement, 'body')
-  assert.match(logo.html, /^<template id="dsbw-logo-template"><svg\b/)
-  assert.match(logo.html, /<svg\b[^>]*\bviewBox="0 0 187 24"/)
-  assert.match(logo.html, /role="img" aria-label="DeepSeek Harness"/)
-  const logoColors = new Set(Array.from(logo.html.matchAll(/fill="var\((--[\w-]+),/g), match => match[1]))
-  for (const color of logoColors) assert.ok(style.text.includes(`${color}:`), `Missing theme color ${color}`)
+  assert.deepEqual(table.map(row => row.kind), ['style', 'global', 'script'])
+  const [style, artwork, runtime] = table
+  const still = readFileSync(new URL('../assets/pixel-wordmark.png', import.meta.url))
+  assert.ok(style.text.includes('data:image/png;base64,' + still.toString('base64')))
+  const geometry = JSON.parse(readFileSync(new URL('../assets/pixel-rise.json', import.meta.url), 'utf8'))
+  assert.equal(artwork.name, '__DSH_BOOT_WHALE_ARTWORK__')
+  assert.deepEqual(artwork.value, { ...geometry, url: route.path })
   assert.equal(runtime.placement, 'body')
   assert.match(runtime.text, /data-dsh-boot-failed/)
   assert.equal(route.kind, 'exact')
-  assert.match(route.path, /^\/dsh-boot-whale\/boot-whale-atlas-[0-9a-f]+\.webp$/)
 
   function request(method) {
     let status
@@ -49,6 +49,8 @@ test('injects the scalable wordmark before client boot and serves the atlas', ()
   assert.equal(get.status, 200)
   assert.equal(get.headers['Content-Type'], 'image/webp')
   assert.equal(get.body.length, get.headers['Content-Length'])
+  const hash = createHash('sha256').update(get.body).digest('hex').slice(0, 12)
+  assert.equal(route.path, '/dsh-boot-whale/pixel-rise-' + hash + '.webp')
   assert.equal(request('HEAD').body, undefined)
   assert.equal(request('POST').status, 405)
 })

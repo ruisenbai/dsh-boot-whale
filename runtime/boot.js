@@ -1,196 +1,206 @@
-/* The index injection runs before client modules, so this opening has no framework dependency. */
+/* An early index injection runs before the client and its framework are available. */
 (() => {
-  if (globalThis.__DSH_BOOT_WHALE_STARTED__) return
-  const logoTemplate = document.getElementById('dsbw-logo-template')
-  if (document.body === null || logoTemplate === null) return
+  const scene = globalThis.__DSH_BOOT_WHALE_ARTWORK__
+  if (!scene || !document.body || globalThis.__DSH_BOOT_WHALE_STARTED__) return
   globalThis.__DSH_BOOT_WHALE_STARTED__ = true
-
-  // The 5.7-second source atlas has ink only in frames 8 through 111, inclusive.
-  const atlas = { width: 384, height: 216, columns: 12, frames: 137, firstVisible: 8, lastVisible: 111 }
-  const frameDuration = 5700 / atlas.frames
-  const duration = (atlas.lastVisible - atlas.firstVisible + 1) * frameDuration
-  const crossfadeDuration = 300
-  const crossfadeAt = duration - crossfadeDuration
-  const breathDuration = 1600
 
   const overlay = document.createElement('div')
   overlay.className = 'dsbw-boot'
-  overlay.dataset.phase = 'opening'
   overlay.dataset.dshBootWhale = ''
-  overlay.style.setProperty('--dsbw-crossfade-duration', `${crossfadeDuration}ms`)
-  overlay.style.setProperty('--dsbw-breath-duration', `${breathDuration}ms`)
-
+  overlay.dataset.phase = 'opening'
+  const stage = document.createElement('div')
+  stage.className = 'dsbw-stage'
+  stage.setAttribute('role', 'img')
+  stage.setAttribute('aria-label', 'DeepSeek Harness')
   const canvas = document.createElement('canvas')
-  canvas.className = 'dsbw-whale'
-  canvas.setAttribute('aria-hidden', 'true')
-  const brand = document.createElement('div')
-  brand.className = 'dsbw-brand'
-  brand.setAttribute('role', 'status')
-  brand.append(logoTemplate.content)
-  logoTemplate.remove()
-  overlay.append(canvas, brand)
+  canvas.className = 'dsbw-scene'
+  canvas.width = scene.width * 3
+  canvas.height = scene.height * 3
+  const still = document.createElement('div')
+  still.className = 'dsbw-still'
+  stage.append(canvas, still)
+  overlay.append(stage)
   document.body.append(overlay)
 
-  const image = new Image()
-  const context = canvas.getContext('2d')
   const motion = matchMedia('(prefers-reduced-motion: reduce)')
-  const asset = '/dsh-boot-whale/boot-whale-atlas-962a22048588.webp'
-  let appReady = false
-  let shown = false
+  const frameDuration = 1000 / scene.fps
   let disposed = false
-  let startedAt
-  let lastPainted = -1
+  let shown = false
+  let appReady = false
+  let canLeave = false
+  let firstFrameAt
+  let lastFrame = -1
+  let ink = ''
+  let pattern
+  let context
+  let tileContext
+  let image
   let frame = 0
-  let imageTimeout = 0
-  let playbackTimeout = 0
-  let brandTimeout = 0
-  let exitTimeout = 0
-  let showStop
-  let width = 0
-  let height = 0
-
+  let guard = 0
+  let hold = 0
+  let exit = 0
+  let stopWatchingWindow
   const observer = new MutationObserver(checkHost)
   observer.observe(document.body, { childList: true, subtree: true, attributes: true, attributeFilter: ['data-dsh-boot-failed'] })
-  const sizeObserver = new ResizeObserver(resize)
-  sizeObserver.observe(canvas)
   document.addEventListener('visibilitychange', onVisibility)
   motion.addEventListener('change', onMotion)
+  canvas.addEventListener('contextlost', showStill)
   window.addEventListener('pagehide', remove)
+
+  function stopFilm() {
+    cancelAnimationFrame(frame)
+    clearTimeout(guard)
+    if (image) {
+      image.onload = image.onerror = null
+      image.removeAttribute('src')
+      image = undefined
+    }
+  }
 
   function remove() {
     if (disposed) return
     disposed = true
-    cancelAnimationFrame(frame)
-    clearTimeout(imageTimeout)
-    clearTimeout(playbackTimeout)
-    clearTimeout(brandTimeout)
-    clearTimeout(exitTimeout)
-    image.onload = null
-    image.onerror = null
-    image.removeAttribute('src')
+    stopFilm()
+    clearTimeout(hold)
+    clearTimeout(exit)
     observer.disconnect()
-    sizeObserver.disconnect()
     document.removeEventListener('visibilitychange', onVisibility)
     motion.removeEventListener('change', onMotion)
+    canvas.removeEventListener('contextlost', showStill)
     window.removeEventListener('pagehide', remove)
-    showStop?.()
+    stopWatchingWindow?.()
     overlay.remove()
   }
 
   function leaveWhenReady() {
-    if (disposed || !appReady || overlay.dataset.phase !== 'brand' || brandTimeout !== 0) return
+    if (disposed || !appReady || !canLeave || overlay.dataset.phase === 'leaving') return
     overlay.dataset.phase = 'leaving'
-    exitTimeout = window.setTimeout(remove, motion.matches ? 0 : 420)
+    stopFilm()
+    exit = window.setTimeout(remove, motion.matches || document.hidden ? 0 : 400)
   }
 
-  function playingWhale() {
-    return !disposed && (overlay.dataset.phase === 'opening' || overlay.dataset.phase === 'crossfade')
+  function allowExit() {
+    canLeave = true
+    clearTimeout(guard)
+    leaveWhenReady()
   }
 
-  function finish() {
-    if (!playingWhale()) return
-    cancelAnimationFrame(frame)
-    clearTimeout(imageTimeout)
-    clearTimeout(playbackTimeout)
+  function showStill() {
+    if (disposed || overlay.dataset.still !== undefined || overlay.dataset.phase === 'leaving') return
+    stopFilm()
+    overlay.dataset.still = ''
     overlay.dataset.phase = 'brand'
-    brandTimeout = window.setTimeout(() => {
-      brandTimeout = 0
-      leaveWhenReady()
-    }, breathDuration)
+    if (canLeave) leaveWhenReady()
+    else hold = window.setTimeout(allowExit, document.hidden ? 0 : (scene.exitFrame - scene.settledFrame) * frameDuration)
   }
 
   function checkHost() {
-    if (disposed) return
-    const host = document.getElementById('root')
-    if (host === null) return
-    const boot = host.querySelector(':scope > [data-dsh-boot]')
-    if (boot?.hasAttribute('data-dsh-boot-failed')) {
+    const root = document.getElementById('root')
+    if (disposed || !root) return
+    if (root.querySelector(':scope > [data-dsh-boot]')?.hasAttribute('data-dsh-boot-failed')) {
       remove()
       return
     }
-    if ([...host.children].some(child => !child.hasAttribute('data-dsh-boot'))) {
+    if ([...root.children].some(child => !child.hasAttribute('data-dsh-boot'))) {
       appReady = true
       leaveWhenReady()
     }
   }
 
-  function resize() {
-    if (!playingWhale() || context === null) return
-    width = canvas.clientWidth
-    height = canvas.clientHeight
-    if (width === 0 || height === 0) return
-    const density = Math.min(devicePixelRatio, 2, Math.max(1, 840 / width))
-    canvas.width = Math.round(width * density)
-    canvas.height = Math.round(height * density)
-    context.setTransform(density, 0, 0, density, 0, 0)
-    context.imageSmoothingEnabled = false
-    lastPainted = -1
-  }
-
-  function paint(index) {
-    if (width === 0 || height === 0 || index === lastPainted) return
-    lastPainted = index
-    const x = (index % atlas.columns) * atlas.width
-    const y = Math.floor(index / atlas.columns) * atlas.height
-    const scale = Math.min(width / atlas.width, height / atlas.height)
-    const left = (width - atlas.width * scale) / 2
-    const top = (height - atlas.height * scale) / 2
-    context.clearRect(0, 0, width, height)
-    context.drawImage(image, x, y, atlas.width, atlas.height,
-      left, top, atlas.width * scale, atlas.height * scale)
-    context.globalCompositeOperation = 'source-in'
-    context.fillStyle = getComputedStyle(canvas).color
-    context.fillRect(0, 0, width, height)
-    context.globalCompositeOperation = 'source-over'
-  }
-
-  function tick(now) {
-    if (!playingWhale()) return
-    if (document.hidden || motion.matches) { finish(); return }
-    if (width === 0 || height === 0) resize()
-    startedAt ??= now
-    if (overlay.dataset.phase === 'opening' && now - startedAt >= crossfadeAt) {
-      // Give the dissolve its full duration even if the renderer missed its first frame.
-      startedAt = now - crossfadeAt
-      overlay.dataset.phase = 'crossfade'
-    }
-    const elapsed = now - startedAt
-    if (elapsed >= duration) { finish(); return }
-    paint(atlas.firstVisible + Math.floor(elapsed / frameDuration))
-    frame = requestAnimationFrame(tick)
-  }
-
   function onVisibility() {
-    if (shown && document.hidden) finish()
+    if (shown && document.hidden) showStill()
   }
 
   function onMotion() {
-    if (motion.matches) finish()
+    if (shown && motion.matches) showStill()
+  }
+
+  // Reuse one tinted dot across the scene. Its three-by-three pattern matches the source whale.
+  function dotPattern(color) {
+    tileContext.clearRect(0, 0, 3, 3)
+    tileContext.fillStyle = color
+    tileContext.globalAlpha = 1
+    tileContext.fillRect(0, 0, 2, 2)
+    tileContext.globalAlpha = 0.4
+    tileContext.fillRect(2, 0, 1, 2)
+    tileContext.fillRect(0, 2, 2, 1)
+    tileContext.globalAlpha = 40 / 255
+    tileContext.fillRect(2, 2, 1, 1)
+    return context.createPattern(tileContext.canvas, 'repeat')
+  }
+
+  function paint(index) {
+    const color = getComputedStyle(canvas).color
+    if (index === lastFrame && ink === color) return
+    if (ink !== color || !pattern) {
+      ink = color
+      pattern = dotPattern(color)
+      if (!pattern) { showStill(); return }
+    }
+    const x = index % scene.columns * scene.width
+    const y = Math.floor(index / scene.columns) * scene.height
+    context.clearRect(0, 0, canvas.width, canvas.height)
+    context.drawImage(image, x, y, scene.width, scene.height, 0, 0, canvas.width, canvas.height)
+    context.globalCompositeOperation = 'source-in'
+    context.fillStyle = pattern
+    context.fillRect(0, 0, canvas.width, canvas.height)
+    context.globalCompositeOperation = 'source-over'
+    lastFrame = index
+  }
+
+  function tick(now) {
+    if (disposed || !image) return
+    if (document.hidden || motion.matches) { showStill(); return }
+    firstFrameAt ??= now
+    let index = Math.floor((now - firstFrameAt) / frameDuration)
+    if (index >= scene.settledFrame && overlay.dataset.phase === 'opening') {
+      // A busy renderer must still present the completed wordmark before the workspace takes over.
+      index = scene.settledFrame
+      firstFrameAt = now - index * frameDuration
+      overlay.dataset.phase = 'brand'
+    }
+    const tile = index < scene.frames ? index : scene.loopStart + (index - scene.loopStart) % (scene.frames - scene.loopStart)
+    try {
+      paint(tile)
+    } catch {
+      // Drawing can fail when the browser loses the canvas while the window is moving.
+      showStill()
+    }
+    if (!image) return
+    if (index >= scene.exitFrame && !canLeave) allowExit()
+    if (image) frame = requestAnimationFrame(tick)
   }
 
   function start() {
     if (disposed || shown) return
     shown = true
-    if (document.hidden || motion.matches || context === null) { finish(); return }
+    if (motion.matches || document.hidden) { showStill(); return }
+    context = canvas.getContext('2d')
+    const tile = document.createElement('canvas')
+    tile.width = tile.height = 3
+    tileContext = tile.getContext('2d')
+    if (!context || !tileContext) { showStill(); return }
+    context.imageSmoothingEnabled = false
+    image = new Image()
+    image.onerror = showStill
     image.onload = () => {
-      if (disposed || overlay.dataset.phase !== 'opening') return
-      clearTimeout(imageTimeout)
-      if (image.naturalWidth !== atlas.width * atlas.columns
-        || image.naturalHeight !== atlas.height * Math.ceil(atlas.frames / atlas.columns)) {
-        finish()
+      if (disposed || !image) return
+      if (image.naturalWidth !== scene.width * scene.columns ||
+          image.naturalHeight !== scene.height * Math.ceil(scene.frames / scene.columns)) {
+        showStill()
         return
       }
-      resize()
-      playbackTimeout = window.setTimeout(finish, duration + 2000)
+      clearTimeout(guard)
+      guard = window.setTimeout(showStill, scene.exitFrame * frameDuration + 2000)
       frame = requestAnimationFrame(tick)
     }
-    image.onerror = finish
-    imageTimeout = window.setTimeout(finish, 8000)
-    image.src = asset
+    guard = window.setTimeout(showStill, 8000)
+    image.src = scene.url
   }
 
   checkHost()
+  if (disposed) return
   const desktop = globalThis.dshDesktopBoot
-  if (typeof desktop?.onWindowShown === 'function') showStop = desktop.onWindowShown(start)
+  if (typeof desktop?.onWindowShown === 'function') stopWatchingWindow = desktop.onWindowShown(start)
   else start()
 })()
