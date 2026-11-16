@@ -11,7 +11,7 @@ const atlasWidth = scene.width * scene.columns
 const atlasHeight = scene.height * Math.ceil(scene.frames / scene.columns)
 const hasImageMagick = spawnSync('magick', ['-version']).status === 0
 
-test('the shipped images contain the declared scene, loop and static dot grid', () => {
+test('the reference scene, loop and static dot grid have matching dimensions and timing', () => {
   const png = readFileSync(asset('pixel-wordmark.png'))
   assert.equal(png.readUInt32BE(16), 3 * scene.width)
   assert.equal(png.readUInt32BE(20), 3 * scene.height)
@@ -74,4 +74,50 @@ test('the ascent matches the whale and waiting water never moves the pixel lette
   const delta = (a, b) => a.reduce((total, value, i) => total + Math.abs(value - b[i]), 0)
   const interior = water.slice(1).map((value, i) => delta(value, water[i]))
   assert.ok(delta(water.at(-1), water[0]) <= Math.max(...interior) * 1.1)
+})
+
+const hasVideoTools = ['ffmpeg', 'ffprobe'].every(bin => spawnSync(bin, ['-version']).status === 0)
+
+test('silent films encode the original dot opacity in both theme views, including the loop seam', {
+  skip: !hasImageMagick || !hasVideoTools,
+}, () => {
+  const alpha = execFileSync('magick', [fileURLToPath(asset('pixel-rise.webp')), '-alpha', 'extract', '-depth', '8', 'gray:-'],
+    { maxBuffer: 24 * 1024 * 1024 })
+  const width = scene.width * 3, height = scene.height * 3, area = width * height
+  for (const [name, offset, count, selected] of [
+    ['pixel-opening', 0, scene.loopStart, [0, 21, 49, 80, scene.settledFrame, scene.loopStart - 1]],
+    ['pixel-ripples', scene.loopStart, scene.frames - scene.loopStart, [0, 29, 59]],
+  ]) {
+    const path = fileURLToPath(asset(name + '.webm'))
+    const info = JSON.parse(execFileSync('ffprobe', ['-v', 'error', '-count_packets', '-show_streams', '-show_format', '-of', 'json', path]))
+    assert.equal(info.streams.length, 1)
+    const [stream] = info.streams
+    assert.equal(stream.codec_name, 'vp9')
+    assert.equal(stream.width, width)
+    assert.equal(stream.height, 2 * height)
+    assert.equal(stream.tags.alpha_mode, '1')
+    assert.equal(stream.r_frame_rate, scene.fps + '/1')
+    assert.equal(Number(stream.nb_read_packets), count)
+    assert.equal(Number(info.format.duration), count / scene.fps)
+    const select = "select='" + selected.map(i => 'eq(n,' + i + ')').join('+') + "'"
+    const decoded = execFileSync('ffmpeg', ['-v', 'error', '-c:v', 'libvpx-vp9', '-i', path, '-vf',
+      select + ',alphaextract', '-fps_mode', 'passthrough', '-f', 'rawvideo', '-pix_fmt', 'gray', 'pipe:1'],
+    { maxBuffer: selected.length * area * 2 })
+    assert.equal(decoded.length, selected.length * area * 2)
+    for (const [i, relative] of selected.entries()) {
+      const frame = offset + relative
+      const top = Math.floor(frame / scene.columns) * scene.height * atlasWidth + frame % scene.columns * scene.width
+      const light = decoded.subarray(i * 2 * area, (i * 2 + 1) * area)
+      assert.ok(light.equals(decoded.subarray((i * 2 + 1) * area, (i + 1) * 2 * area)), 'theme alpha matches')
+      const expected = Buffer.alloc(area)
+      for (let y = 0; y < height; y++) {
+        for (let x = 0; x < width; x++) {
+          const dot = alpha[top + Math.floor(y / 3) * atlasWidth + Math.floor(x / 3)]
+          const edge = (x % 3 === 2) + (y % 3 === 2)
+          expected[y * width + x] = Math.round(dot * [1, 0.4, 40 / 255][edge])
+        }
+      }
+      assert.ok(light.equals(expected), name + ' reproduces dot coverage at frame ' + frame)
+    }
+  }
 })

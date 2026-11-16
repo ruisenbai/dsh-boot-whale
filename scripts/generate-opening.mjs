@@ -1,6 +1,8 @@
-/** Build the shared light/dark opacity atlas and the reduced-motion wordmark. */
+/** Render the reference dot grid, transparent playback films and reduced-motion wordmark. */
 import { execFileSync } from 'node:child_process'
-import { readFileSync, writeFileSync } from 'node:fs'
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
 
 const assets = new URL('../assets/', import.meta.url)
 const asset = name => new URL(name, assets)
@@ -233,21 +235,47 @@ function encodeMask(data, w, h, options) {
     '-channel', 'RGB', '-evaluate', 'set', '100%', '+channel', '-strip', ...options], data)
 }
 
-function staticWordmark(coverage) {
+function dotGrid(cells) {
   const stride = width * 3
   const pixels = Buffer.alloc(stride * height * 3)
-  // Each source dot has a bright core, two 40% edges, and a 40/255 corner.
-  const tile = [1, 1, 0.4, 1, 1, 0.4, 0.4, 0.4, 40 / 255]
-  for (let y = 0; y < wordmark.height; y++) {
-    for (let x = 0; x < wordmark.width; x++) {
-      const strength = Math.round(255 * 0.99 * coverage(x, y))
-      const origin = (wordmark.y + y) * 3 * stride + (wordmark.x + x) * 3
-      for (let i = 0; i < tile.length; i++) {
-        pixels[origin + Math.floor(i / 3) * stride + i % 3] = Math.round(strength * tile[i])
-      }
+  for (let y = 0; y < height; y++) {
+    for (let x = 0; x < width; x++) {
+      const core = cells[y * width + x]
+      if (!core) continue
+      const i = y * 3 * stride + x * 3
+      const edge = Math.round(core * 0.4)
+      pixels[i] = pixels[i + 1] = pixels[i + stride] = pixels[i + stride + 1] = core
+      pixels[i + 2] = pixels[i + stride + 2] = pixels[i + 2 * stride] = pixels[i + 2 * stride + 1] = edge
+      pixels[i + 2 * stride + 2] = Math.round(core * 40 / 255)
     }
   }
-  return encodeMask(pixels, stride, height * 3, ['-define', 'png:exclude-chunks=date,time', 'png:-'])
+  return pixels
+}
+
+function staticWordmark(coverage) {
+  const cells = Buffer.alloc(width * height)
+  for (let y = 0; y < wordmark.height; y++) {
+    for (let x = 0; x < wordmark.width; x++) {
+      cells[(wordmark.y + y) * width + wordmark.x + x] = Math.round(255 * 0.99 * coverage(x, y))
+    }
+  }
+  return encodeMask(dotGrid(cells), width * 3, height * 3, ['-define', 'png:exclude-chunks=date,time', 'png:-'])
+}
+
+function encodeFilm(frames, path) {
+  const size = (width * 3) + 'x' + (height * 3)
+  // Both theme colors share a clock. CSS crops the matching half even during a theme change.
+  const colors = 'color=c=0x11263b:s=' + size + ':r=' + fps + '[light];' +
+    'color=c=0xedf5ff:s=' + size + ':r=' + fps + '[dark];[light][dark]vstack'
+  imageTool('ffmpeg', ['-hide_banner', '-loglevel', 'error', '-y',
+    '-f', 'rawvideo', '-pixel_format', 'gray', '-video_size', size, '-framerate', String(fps), '-i', 'pipe:0',
+    '-f', 'lavfi', '-i', colors, '-filter_complex',
+    '[0:v]split[a][b];[a][b]vstack[alpha];[1:v][alpha]alphamerge,format=yuva420p[film]',
+    '-map', '[film]', '-frames:v', String(frames.length), '-an', '-c:v', 'libvpx-vp9',
+    '-lossless', '1', '-auto-alt-ref', '0', '-g', String(fps), '-deadline', 'good', '-cpu-used', '6',
+    '-threads', '2', '-fflags', '+bitexact', '-flags:v', '+bitexact', '-map_metadata', '-1', path],
+  Buffer.concat(frames))
+  return readFileSync(path)
 }
 
 function generate() {
@@ -258,8 +286,10 @@ function generate() {
   const atlasWidth = width * scene.columns
   const atlasHeight = height * Math.ceil(scene.frames / scene.columns)
   const atlas = Buffer.alloc(atlasWidth * atlasHeight)
+  const frames = []
   for (let index = 0; index < scene.frames; index++) {
     const frame = renderFrame(index, whale, coverage)
+    frames.push(dotGrid(frame))
     const start = Math.floor(index / scene.columns) * height * atlasWidth + index % scene.columns * width
     for (let y = 0; y < height; y++) frame.copy(atlas, start + y * atlasWidth, y * width, (y + 1) * width)
   }
@@ -268,6 +298,14 @@ function generate() {
     ['pixel-rise.json', Buffer.from(JSON.stringify(scene, null, 2) + '\n')],
     ['pixel-wordmark.png', staticWordmark(coverage)],
   ])
+  const temporary = mkdtempSync(join(tmpdir(), 'dsbw-encode-'))
+  try {
+    for (const [name, segment] of [['pixel-opening.webm', frames.slice(0, scene.loopStart)], ['pixel-ripples.webm', frames.slice(scene.loopStart)]]) {
+      outputs.set(name, encodeFilm(segment, join(temporary, name)))
+    }
+  } finally {
+    rmSync(temporary, { recursive: true, force: true })
+  }
   for (const [name, data] of outputs) {
     if (process.argv.includes('--check')) {
       if (!readFileSync(asset(name)).equals(data)) throw new Error('Regenerate ' + name)

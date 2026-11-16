@@ -1,48 +1,59 @@
-/** Host plugin: insert the opening before client modules load and serve its frame atlas. */
+/** Insert the opening before client boot and serve seekable, immutable films. */
 import { createHash } from 'node:crypto'
 import { readFileSync } from 'node:fs'
 
 export const name = 'boot-whale'
 export const inject = []
 
-const atlas = readFileSync(new URL('./assets/pixel-rise.webp', import.meta.url))
-const fingerprint = createHash('sha256').update(atlas).digest('hex').slice(0, 12)
-const route = `/dsh-boot-whale/pixel-rise-${fingerprint}.webp`
-const geometry = JSON.parse(readFileSync(new URL('./assets/pixel-rise.json', import.meta.url), 'utf8'))
+function film(name) {
+  const bytes = readFileSync(new URL('./assets/' + name + '.webm', import.meta.url))
+  const hash = createHash('sha256').update(bytes).digest('hex').slice(0, 12)
+  const path = '/dsh-boot-whale/' + name + '-' + hash + '.webm'
+  return { kind: 'exact', path, handler(req, res) {
+    if (req.method !== 'GET' && req.method !== 'HEAD') {
+      res.writeHead(405, { Allow: 'GET, HEAD' })
+      return res.end()
+    }
+    const headers = { 'Content-Type': 'video/webm', 'Accept-Ranges': 'bytes',
+      'Cache-Control': 'public, max-age=31536000, immutable' }
+    const range = req.method === 'GET' && /^bytes=(\d*)-(\d*)$/i.exec(req.headers.range ?? '')
+    if (range && (range[1] || range[2])) {
+      const start = range[1] ? Number(range[1]) : Math.max(0, bytes.length - Number(range[2]))
+      const end = range[1] && range[2] ? Math.min(bytes.length - 1, Number(range[2])) : bytes.length - 1
+      if (start > end) {
+        res.writeHead(416, { ...headers, 'Content-Range': 'bytes */' + bytes.length, 'Content-Length': 0 })
+        return res.end()
+      }
+      res.writeHead(206, { ...headers, 'Content-Range': 'bytes ' + start + '-' + end + '/' + bytes.length,
+        'Content-Length': end - start + 1 })
+      return res.end(bytes.subarray(start, end + 1))
+    }
+    res.writeHead(200, { ...headers, 'Content-Length': bytes.length })
+    res.end(req.method === 'GET' ? bytes : undefined)
+  } }
+}
+
+const opening = film('pixel-opening')
+const ripples = film('pixel-ripples')
+const { fps, settledFrame, exitFrame } = JSON.parse(readFileSync(new URL('./assets/pixel-rise.json', import.meta.url)))
+const artwork = { opening: opening.path, ripples: ripples.path, settledAt: settledFrame / fps, exitAt: exitFrame / fps }
 const still = readFileSync(new URL('./assets/pixel-wordmark.png', import.meta.url)).toString('base64')
 const stylesheet = readFileSync(new URL('./runtime/boot.css', import.meta.url), 'utf8')
-const css = `${stylesheet}\n.dsbw-still { mask-image: url("data:image/png;base64,${still}"); }`
+const css = stylesheet + '\n.dsbw-still { mask-image: url("data:image/png;base64,' + still + '"); }'
 const script = readFileSync(new URL('./runtime/boot.js', import.meta.url), 'utf8')
 
 if (/<\/style/iu.test(css) || /<\/script/iu.test(script)) {
   throw new Error('dsh-boot-whale: runtime cannot be inserted into index.html')
 }
 
-/** Register one index injection and the image route for this plugin. */
+/** Register the document injection and both media routes for this plugin's lifetime. */
 export function apply(ctx) {
   ctx.on('webserver/index-inject', table => {
     table.push({ kind: 'style', text: css })
-    table.push({ kind: 'global', name: '__DSH_BOOT_WHALE_ARTWORK__', value: { ...geometry, url: route } })
+    table.push({ kind: 'global', name: '__DSH_BOOT_WHALE_ARTWORK__', value: artwork })
     table.push({ kind: 'script', placement: 'body', text: script })
   })
-
   ctx.inject(['webServer'], child => {
-    child.effect(() => child.webServer.register({
-      kind: 'exact',
-      path: route,
-      handler(req, res) {
-        if (req.method !== 'GET' && req.method !== 'HEAD') {
-          res.writeHead(405, { Allow: 'GET, HEAD' })
-          res.end()
-          return
-        }
-        res.writeHead(200, {
-          'Content-Type': 'image/webp',
-          'Content-Length': atlas.length,
-          'Cache-Control': 'public, max-age=31536000, immutable',
-        })
-        res.end(req.method === 'HEAD' ? undefined : atlas)
-      },
-    }))
+    for (const route of [opening, ripples]) child.effect(() => child.webServer.register(route))
   })
 }

@@ -21,11 +21,12 @@ body[data-ds-dark-theme] .dsbw-boot {
   width: min(1200px, 100vw, 177.7778vh);
   aspect-ratio: 16 / 9;
   position: relative;
+  overflow: hidden;
   pointer-events: none;
   user-select: none;
 }
 
-.dsbw-scene,
+.dsbw-film,
 .dsbw-still {
   position: absolute;
   inset: 0;
@@ -34,6 +35,17 @@ body[data-ds-dark-theme] .dsbw-boot {
   image-rendering: pixelated;
 }
 
+.dsbw-film {
+  height: 200%;
+  object-fit: fill;
+  transform: translateZ(0);
+}
+
+body[data-ds-dark-theme] .dsbw-film { transform: translate3d(0, -50%, 0); }
+.dsbw-film[data-ripples] { visibility: hidden; }
+.dsbw-stage[data-looping] .dsbw-film[data-ripples] { visibility: visible; }
+.dsbw-stage[data-looping] .dsbw-film:first-child { visibility: hidden; }
+
 .dsbw-still {
   display: none;
   background: currentColor;
@@ -41,7 +53,7 @@ body[data-ds-dark-theme] .dsbw-boot {
   mask-repeat: no-repeat;
 }
 
-.dsbw-boot[data-still] .dsbw-scene { display: none; }
+.dsbw-boot[data-still] .dsbw-film { display: none; }
 .dsbw-boot[data-still] .dsbw-still { display: block; }
 
 .dsbw-boot[data-phase="leaving"] {
