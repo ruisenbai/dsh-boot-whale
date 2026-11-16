@@ -1,6 +1,7 @@
 .dsbw-boot {
   --dsbw-ink: #11263b;
-  --dsbw-accent: #2776d1;
+  --harness-logo-foreground: var(--dsw-alias-label-primary, #0f1115);
+  --harness-logo-chip-text: #fff;
   position: fixed;
   inset: 0;
   z-index: 2147483000;
@@ -15,7 +16,8 @@
 
 body[data-ds-dark-theme] .dsbw-boot {
   --dsbw-ink: #edf5ff;
-  --dsbw-accent: #77b9ff;
+  --harness-logo-foreground: var(--dsw-alias-label-primary, #f9fafb);
+  --harness-logo-chip-text: #353638;
   background: var(--dsw-alias-bg-base, var(--dsh-boot-bg, #151517));
 }
 
@@ -35,54 +37,33 @@ body[data-ds-dark-theme] .dsbw-boot {
 
 .dsbw-brand {
   display: none;
-  width: min(610px, calc(100vw - 48px));
-  text-align: center;
-  color: var(--dsbw-ink);
-  font-family: system-ui, -apple-system, "Segoe UI", sans-serif;
+  width: min(187px, calc(100% - 32px));
   user-select: none;
 }
 
-.dsbw-boot[data-phase="brand"] .dsbw-whale {
+.dsbw-brand svg {
+  display: block;
+  width: 100%;
+  height: auto;
+}
+
+.dsbw-boot:not([data-phase="opening"]) .dsbw-whale {
   display: none;
 }
 
-.dsbw-boot[data-phase="brand"] .dsbw-brand {
+.dsbw-boot:not([data-phase="opening"]) .dsbw-brand {
   display: block;
-  animation: dsbw-brand-enter 480ms ease-out both;
 }
 
-.dsbw-brand-name {
-  display: block;
-  font-size: clamp(38px, 7vw, 72px);
-  font-weight: 650;
-  line-height: 1.08;
-  letter-spacing: -0.065em;
+@keyframes dsbw-brand-breathe {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.68; }
 }
 
-.dsbw-brand-rule {
-  display: block;
-  width: clamp(72px, 12vw, 116px);
-  height: 2px;
-  margin: clamp(22px, 4vw, 34px) auto 20px;
-  border-radius: 999px;
-  background: var(--dsbw-accent);
-}
-
-.dsbw-brand-subtitle {
-  display: block;
-  padding-left: 0.38em;
-  font-size: clamp(13px, 2.2vw, 19px);
-  font-weight: 500;
-  line-height: 1.4;
-  letter-spacing: 0.38em;
-}
-
-@keyframes dsbw-brand-enter {
-  from { opacity: 0; transform: translateY(12px); }
-  to { opacity: 1; transform: translateY(0); }
+@media (prefers-reduced-motion: no-preference) {
+  .dsbw-brand { animation: dsbw-brand-breathe 2.4s ease-in-out infinite; }
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .dsbw-boot,
-  .dsbw-boot[data-phase="brand"] .dsbw-brand { animation: none; transition: none; }
+  .dsbw-boot { transition: none; }
 }

@@ -21,9 +21,15 @@ test('injects the opening before client boot and serves the atlas', () => {
 
   const table = []
   collect(table)
-  assert.deepEqual(table.map(row => row.kind), ['style', 'script'])
-  assert.equal(table[1].placement, 'body')
-  assert.match(table[1].text, /data-dsh-boot-failed/)
+  assert.deepEqual(table.map(row => row.kind), ['style', 'html', 'script'])
+  const [style, logo, runtime] = table
+  assert.equal(logo.placement, 'body')
+  assert.match(logo.html, /^<template id="dsbw-logo-template"><svg\b/)
+  assert.match(logo.html, /role="img" aria-label="DeepSeek Harness"/)
+  const logoColors = new Set(Array.from(logo.html.matchAll(/fill="var\((--[\w-]+),/g), match => match[1]))
+  for (const color of logoColors) assert.ok(style.text.includes(`${color}:`), `Missing theme color ${color}`)
+  assert.equal(runtime.placement, 'body')
+  assert.match(runtime.text, /data-dsh-boot-failed/)
   assert.equal(route.kind, 'exact')
   assert.match(route.path, /^\/dsh-boot-whale\/boot-whale-atlas-[0-9a-f]+\.webp$/)
 

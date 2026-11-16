@@ -1,6 +1,6 @@
 {
   "name": "dsh-boot-whale",
-  "version": "0.1.1",
+  "version": "0.1.2",
   "description": "A dot whale opening for DeepSeek Harness with a quiet brand hold while startup continues",
   "type": "module",
   "main": "./index.js",

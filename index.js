@@ -8,6 +8,7 @@ const route = '/dsh-boot-whale/boot-whale-atlas-962a22048588.webp'
 const css = readFileSync(new URL('./runtime/boot.css', import.meta.url), 'utf8')
 const script = readFileSync(new URL('./runtime/boot.js', import.meta.url), 'utf8')
 const atlas = readFileSync(new URL('./assets/boot-whale-atlas-962a22048588.webp', import.meta.url))
+const logo = readFileSync(new URL('./assets/harness-logo.svg', import.meta.url), 'utf8')
 
 if (/<\/style/iu.test(css) || /<\/script/iu.test(script)) {
   throw new Error('dsh-boot-whale: runtime cannot be inserted into index.html')
@@ -17,6 +18,7 @@ if (/<\/style/iu.test(css) || /<\/script/iu.test(script)) {
 export function apply(ctx) {
   ctx.on('webserver/index-inject', table => {
     table.push({ kind: 'style', text: css })
+    table.push({ kind: 'html', placement: 'body', html: `<template id="dsbw-logo-template">${logo}</template>` })
     table.push({ kind: 'script', placement: 'body', text: script })
   })
 

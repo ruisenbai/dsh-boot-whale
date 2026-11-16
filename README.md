@@ -1,10 +1,10 @@
 # dsh-boot-whale
 
-A full-screen dot whale opening for DeepSeek Harness. The animation contains no text. If the application is still loading when the whale finishes, a redesigned **DeepSeek / HARNESS** wordmark stays on screen until the main interface is ready. A fast launch shows the whole whale and then fades into the interface. Its background follows DSH's light or dark application fill. Narrow windows and reduced-motion settings are supported; startup failures reveal DSH's own error report.
+A full-screen dot whale opens DeepSeek Harness. When the whale finishes, the **deepseek HARNESS** logo appears for at least 1.2 seconds. It gently dims and brightens while the application loads, then fades into the ready interface. With reduced motion enabled, a static logo replaces the whale and its pulse. The opening uses DSH’s light or dark background and fits narrow windows. Startup failures immediately reveal DSH’s error report.
 
 ## Install
 
-This plugin is intended for the DSH build that removes its built-in boot whale. A stock build that still contains the built-in animation can play both openings.
+On Desktop, use a DSH build that signals opening plugins when a visible window reloads. This lets a refresh replay the opening and return to the workspace. A build with its own startup whale can play both openings.
 
 1. Launch DSH once to initialize the `desktop` profile, then fully quit it.
 2. Install the plugin with the DSH CLI:

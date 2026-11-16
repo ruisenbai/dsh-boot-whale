@@ -38,6 +38,9 @@ function scene({ desktop = false, reducedMotion = false, rootInitiallyMissing = 
   }
 
   const body = new Element('body')
+  const logoTemplate = new Element('template')
+  logoTemplate.content = new Element('fragment')
+  body.append(logoTemplate)
   const host = new Element('div')
   const boot = new Element('div')
   boot.setAttribute('data-dsh-boot', '')
@@ -82,7 +85,10 @@ function scene({ desktop = false, reducedMotion = false, rootInitiallyMissing = 
   const globals = {
     document: {
       body, hidden: false,
-      getElementById(id) { return id === 'root' && rootExists ? host : null },
+      getElementById(id) {
+        if (id === 'dsbw-logo-template') return logoTemplate
+        return id === 'root' && rootExists ? host : null
+      },
       createElement(tag) { return new Element(tag) },
       addEventListener() {}, removeEventListener() {},
     },
@@ -144,6 +150,7 @@ test('keeps the opening textless until its first breach ends, then holds the wor
   s.step(0)
   assert.equal(s.overlay.dataset.phase, 'opening')
   s.step(5700)
+  s.advance(5000)
   assert.equal(s.overlay.dataset.phase, 'brand')
   s.ready()
   assert.equal(s.overlay.dataset.phase, 'leaving')
@@ -151,20 +158,27 @@ test('keeps the opening textless until its first breach ends, then holds the wor
   assert.equal(s.body.children.length, 0)
 })
 
-test('a ready application still waits for the whale, without flashing the wordmark', () => {
+test('a fast launch gives the logo its full hold after the whale finishes', () => {
   const s = scene()
   s.load()
   s.step(0)
   s.ready()
   assert.equal(s.overlay.dataset.phase, 'opening')
   s.step(5700)
+  assert.equal(s.overlay.dataset.phase, 'brand')
+  s.advance(1199)
+  assert.equal(s.overlay.dataset.phase, 'brand')
+  s.advance(1)
   assert.equal(s.overlay.dataset.phase, 'leaving')
+  s.advance(420)
+  assert.equal(s.body.children.length, 0)
 })
 
 test('reduced motion shows the wordmark immediately and failures reveal the native report', () => {
   const s = scene({ reducedMotion: true })
   assert.equal(s.overlay.dataset.phase, 'brand')
   s.fail()
+  s.advance(1200)
   assert.equal(s.body.children.length, 0)
 })
 
@@ -172,7 +186,10 @@ test('an image failure shows the wordmark until the application is ready', () =>
   const s = scene()
   s.imageInstances[0].onerror()
   assert.equal(s.overlay.dataset.phase, 'brand')
+  s.advance(500)
   s.ready()
+  assert.equal(s.overlay.dataset.phase, 'brand')
+  s.advance(700)
   assert.equal(s.overlay.dataset.phase, 'leaving')
 })
 
@@ -184,5 +201,6 @@ test('served HTML can inject the opening before the application root is parsed',
   s.load()
   s.step(0)
   s.step(5700)
+  s.advance(1200)
   assert.equal(s.overlay.dataset.phase, 'leaving')
 })
