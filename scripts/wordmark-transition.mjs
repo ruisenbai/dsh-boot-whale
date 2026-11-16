@@ -1,4 +1,6 @@
 /** Offline rendering of the traveling light and the SVG contours it reveals. */
+import { glintOffset, glintRadius, sweepX } from '../runtime/sweep.js'
+
 const clamp = value => Math.max(0, Math.min(1, value))
 const mix = (from, to, progress) => from + (to - from) * progress
 const smooth = value => { const t = clamp(value); return t * t * (3 - 2 * t) }
@@ -134,15 +136,14 @@ export function createWordmarkTransition(cells, wordmark, scale, vector) {
   return function render(progress) {
     const alpha = Buffer.alloc(area), colors = Buffer.alloc(area * 3 * themeInks.length)
     const moving = progress > 0 && progress < 1
-    const front = mix(-11 * scale, width + 11 * scale, mix(progress, smooth(progress), 0.17))
     for (let y = 0; y < height; y++) {
-      const center = front + (height / 2 - y) * 0.18
+      const center = sweepX(progress, width, height, y, scale)
       for (let x = 0; x < width; x++) {
         const distance = (x - center) / scale
         const local = moving ? clamp(0.5 - distance / 12.25) : progress
         const fill = smooth(local / 0.88), shape = smooth((local - 0.10) / 0.90)
         const reflection = moving ? 0.94 * smooth(1 - Math.abs(distance + 0.25) / 9) : 0
-        const core = moving ? smooth(1 - Math.abs(distance - 0.375) / 2.75) : 0
+        const core = moving ? smooth(1 - Math.abs(distance - glintOffset) / glintRadius) : 0
         const aura = moving ? smooth(1 - Math.abs(distance + 0.375) / 11) : 0
         const i = y * width + x
         let source = dots[i], target = ink[i], svgAlpha = vectorAlpha[i]

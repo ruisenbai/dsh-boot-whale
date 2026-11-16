@@ -16,7 +16,11 @@
   const still = document.createElement('div')
   still.className = 'dsbw-still'
   still.setAttribute('aria-hidden', 'true')
-  still.append(logo.content.cloneNode(true))
+  const mask = document.createElement('div')
+  mask.className = 'dsbw-mask'
+  mask.append(logo.content.cloneNode(true))
+  const wordmark = mask.firstElementChild
+  still.append(mask)
 
   function film() {
     const video = document.createElement('video')
@@ -43,13 +47,15 @@
   let guard = 0
   let hold = 0
   let exit = 0
+  let sweep = []
   let stopWatchingWindow
   const observer = new MutationObserver(checkHost)
   observer.observe(document.body, { childList: true, subtree: true, attributes: true, attributeFilter: ['data-dsh-boot-failed'] })
   document.addEventListener('visibilitychange', onVisibility)
   motion.addEventListener('change', onMotion)
   window.addEventListener('pagehide', remove)
-  opening.addEventListener('timeupdate', syncOpening)
+  const clockEvents = ['playing', 'timeupdate', 'waiting', 'pause', 'ratechange', 'seeking', 'seeked']
+  for (const event of clockEvents) opening.addEventListener(event, syncOpening)
   opening.addEventListener('ended', startRipples)
   opening.addEventListener('error', showStill)
   ripples.addEventListener('playing', revealRipples)
@@ -72,7 +78,8 @@
     document.removeEventListener('visibilitychange', onVisibility)
     motion.removeEventListener('change', onMotion)
     window.removeEventListener('pagehide', remove)
-    opening.removeEventListener('timeupdate', syncOpening)
+    for (const event of clockEvents) opening.removeEventListener(event, syncOpening)
+    cancelSweep()
     opening.removeEventListener('ended', startRipples)
     opening.removeEventListener('error', showStill)
     ripples.removeEventListener('playing', revealRipples)
@@ -94,6 +101,7 @@
     if (disposed || overlay.dataset.still !== undefined || overlay.dataset.phase === 'leaving') return
     overlay.dataset.still = ''
     overlay.dataset.phase = 'brand'
+    cancelSweep()
     clearTimeout(guard)
     release(opening)
     release(ripples)
@@ -124,12 +132,45 @@
     if (shown && motion.matches) showStill()
   }
 
-  // Video keeps its own presentation clock while startup JavaScript occupies the UI thread.
-  function syncOpening() {
-    if (disposed || overlay.dataset.still !== undefined || overlay.dataset.phase === 'leaving') return
-    if (opening.currentTime >= art.settledAt && overlay.dataset.phase === 'opening') overlay.dataset.phase = 'brand'
-    if (opening.currentTime < art.exitAt) return
-    canLeave = true
+  function cancelSweep() {
+    for (const animation of sweep) animation.cancel()
+    sweep = []
+  }
+
+  // Opposite compositor transforms move only the cut edge, even while startup occupies the UI thread.
+  function syncSweep(time, waiting) {
+    if (!sweep.length) {
+      const timing = { delay: art.sweep.startAt * 1000, duration: (art.settledAt - art.sweep.startAt) * 1000, fill: 'both' }
+      const frames = direction => art.sweep.positions.map(x => ({
+        transform: 'translate3d(' + direction * x + '%, 0, 0)', easing: 'step-end',
+      }))
+      sweep = [mask.animate(frames(1), timing), wordmark.animate(frames(-1), timing)]
+    }
+    const paused = opening.paused || opening.seeking || waiting || opening.readyState < 3
+    const running = sweep[0].playState === 'running'
+    const align = paused || !running || Math.abs(sweep[0].currentTime - time) > 500 / art.sweep.fps
+    for (const animation of sweep) {
+      if (paused) animation.pause()
+      else if (animation.playbackRate !== opening.playbackRate) animation.playbackRate = opening.playbackRate
+      if (align) animation.currentTime = time
+      if (!paused && !running) animation.play()
+    }
+  }
+
+  function syncOpening(event) {
+    if (disposed || overlay.dataset.still !== undefined || overlay.dataset.phase === 'leaving' || !opening.hasAttribute('src')) return
+    const seconds = opening.currentTime
+    canLeave = seconds >= art.exitAt
+    if (seconds < art.settledAt) {
+      if (overlay.dataset.phase !== 'opening') overlay.dataset.phase = 'opening'
+      syncSweep(seconds * 1000, event?.type === 'waiting')
+      return
+    }
+    if (overlay.dataset.phase !== 'brand') {
+      overlay.dataset.phase = 'brand'
+      cancelSweep()
+    }
+    if (!canLeave) return
     if (!appReady && !ripples.hasAttribute('src')) ripples.src = art.ripples
     leaveWhenReady()
   }

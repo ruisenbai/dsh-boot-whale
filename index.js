@@ -1,6 +1,7 @@
 /** Insert the opening before client boot and serve seekable, immutable films. */
 import { createHash } from 'node:crypto'
 import { readFileSync } from 'node:fs'
+import { wordmarkSweep } from './runtime/sweep.js'
 
 export const name = 'boot-whale'
 export const inject = []
@@ -35,13 +36,16 @@ function film(name) {
 
 const opening = film('pixel-opening')
 const ripples = film('pixel-ripples')
-const { fps, settledFrame, exitFrame, wordmark, width, height } =
-  JSON.parse(readFileSync(new URL('./assets/pixel-rise.json', import.meta.url)))
-const artwork = { opening: opening.path, ripples: ripples.path, settledAt: settledFrame / fps, exitAt: exitFrame / fps }
+const scene = JSON.parse(readFileSync(new URL('./assets/pixel-rise.json', import.meta.url)))
+const { fps, restoreStart, settledFrame, exitFrame, wordmark, width, height } = scene
+const { positions, tilt } = wordmarkSweep(scene)
+const artwork = { opening: opening.path, ripples: ripples.path, settledAt: settledFrame / fps, exitAt: exitFrame / fps,
+  sweep: { startAt: restoreStart / fps, fps, positions } }
 const logo = readFileSync(new URL('./assets/harness-logo.svg', import.meta.url), 'utf8')
 const stylesheet = readFileSync(new URL('./runtime/boot.css', import.meta.url), 'utf8')
 const css = stylesheet + '\n.dsbw-still { left: ' + (100 * wordmark.x / width) + '%; top: ' + (100 * wordmark.y / height) +
-  '%; width: ' + (100 * wordmark.width / width) + '%; height: ' + (100 * wordmark.height / height) + '%; }'
+  '%; width: ' + (100 * wordmark.width / width) + '%; height: ' + (100 * wordmark.height / height) +
+  '%; --dsbw-sweep-tilt: ' + tilt + '%; }'
 const script = readFileSync(new URL('./runtime/boot.js', import.meta.url), 'utf8')
 
 if (/<\/style/iu.test(css) || /<\/script/iu.test(script)) {

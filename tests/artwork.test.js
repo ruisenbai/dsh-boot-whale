@@ -4,6 +4,7 @@ import { createHash } from 'node:crypto'
 import { readFileSync } from 'node:fs'
 import { test } from 'node:test'
 import { fileURLToPath } from 'node:url'
+import { wordmarkSweep } from '../runtime/sweep.js'
 
 const asset = name => new URL('../assets/' + name, import.meta.url)
 const scene = JSON.parse(readFileSync(asset('pixel-rise.json'), 'utf8'))
@@ -138,6 +139,9 @@ test('one highlight reveals the SVG from left to right in both themes and leaves
   const w = 3 * width, h = 3 * height, bytes = w * h * 4
   const svg = readFileSync(asset('harness-logo.svg'), 'utf8')
   const sweepFrame = fraction => scene.restoreStart + Math.round(fraction * (scene.settledFrame - scene.restoreStart))
+  const { positions, tilt } = wordmarkSweep(scene)
+  assert.ok(positions[0] + tilt < 0 && positions.at(-1) - tilt > 100)
+  assert.ok(positions.slice(1).every((x, i) => x > positions[i]), 'the revealed area only grows')
   for (const [half, fg, chip, bg] of [[0, '#0f1115', '#ffffff', [255, 255, 255]], [1, '#f9fafb', '#353638', [21, 21, 23]]]) {
     const logo = svg.replaceAll('var(--harness-logo-foreground, #F9FAFB)', fg)
       .replaceAll('var(--harness-logo-chip-text, #353638)', chip)
@@ -190,6 +194,8 @@ test('one highlight reveals the SVG from left to right in both themes and leaves
       const index = sweepFrame(fraction) - scene.restoreStart, frame = marks[index], glint = lights[index]
       assert.ok(glint.energy > 1000, 'visible light on the mark')
       assert.ok(Math.abs(glint.center - position) < 0.06, 'light follows the reveal across the lettering')
+      const edge = positions[index] / 100
+      assert.ok(Math.abs(glint.center - edge) < 0.035, 'the SVG meets the bright band in this video frame')
       assert.ok(meanDifference(frame, final, 0, Math.floor(w * (position - 0.10))) < 1, 'swept strokes match the SVG')
       assert.ok(meanDifference(frame, dot, Math.ceil(w * (position + 0.10)), w) < 1, 'pixels ahead of the light stay intact')
     }

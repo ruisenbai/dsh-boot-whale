@@ -2,11 +2,13 @@ import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
 import { test } from 'node:test'
 import vm from 'node:vm'
+import { wordmarkSweep } from '../runtime/sweep.js'
 
 const runtime = readFileSync(new URL('../runtime/boot.js', import.meta.url), 'utf8')
 const geometry = JSON.parse(readFileSync(new URL('../assets/pixel-rise.json', import.meta.url)))
 const art = { opening: '/opening.webm', ripples: '/ripples.webm',
-  settledAt: geometry.settledFrame / geometry.fps, exitAt: geometry.exitFrame / geometry.fps }
+  settledAt: geometry.settledFrame / geometry.fps, exitAt: geometry.exitFrame / geometry.fps,
+  sweep: { startAt: geometry.restoreStart / geometry.fps, fps: geometry.fps, positions: wordmarkSweep(geometry).positions } }
 
 function scene({ desktop = false, reduced = false, rejectPlay = false } = {}) {
   let clock = 0, id = 0, shown, check
@@ -16,6 +18,14 @@ function scene({ desktop = false, reduced = false, rejectPlay = false } = {}) {
     children = []
     dataset = {}
     attributes = new Map()
+    get firstElementChild() { return this.children[0] }
+    animations = []
+    animate(frames, timing) {
+      const animation = { frames, timing, currentTime: 0, playbackRate: 1, playState: 'running',
+        play() { this.playState = 'running' }, pause() { this.playState = 'paused' }, cancel() { this.playState = 'idle' } }
+      this.animations.push(animation)
+      return animation
+    }
     append(...children) { for (const child of children) { child.parent = this; this.children.push(child) } }
     remove() { this.parent.children = this.parent.children.filter(child => child !== this) }
     setAttribute(key, value) { this.attributes.set(key, value) }
@@ -28,13 +38,21 @@ function scene({ desktop = false, reduced = false, rejectPlay = false } = {}) {
   }
   class Video extends Element {
     currentTime = 0
+    playbackRate = 1
+    readyState = 4
+    paused = true
     plays = 0
     pauses = 0
     loads = 0
     set src(url) { this.setAttribute('src', url) }
     get src() { return this.attributes.get('src') }
-    play() { this.plays++; return rejectPlay ? Promise.reject(Error('Playback denied')) : Promise.resolve() }
-    pause() { this.pauses++ }
+    play() {
+      this.plays++
+      if (rejectPlay) return Promise.reject(Error('Playback denied'))
+      this.paused = false
+      return Promise.resolve()
+    }
+    pause() { this.pauses++; this.paused = true; this.dispatchEvent(new Event('pause')) }
     load() { this.loads++ }
     time(seconds) { this.currentTime = seconds; this.dispatchEvent(new Event('timeupdate')) }
     end() { this.ended = true; this.time(geometry.frames / geometry.fps); this.dispatchEvent(new Event('ended')) }
@@ -96,7 +114,7 @@ test('each new desktop document starts once from frame zero after its window sig
     assert.equal(s.opening.plays, 1)
     assert.ok(s.opening.muted && s.opening.defaultMuted && s.opening.playsInline)
     s.opening.time(geometry.restoreStart / geometry.fps + 0.9)
-    assert.equal(s.layer.dataset.phase, 'opening', 'video remains visible throughout the contour transition')
+    assert.equal(s.layer.dataset.phase, 'opening', 'the film still shows the dots ahead of the light')
     s.opening.time(art.settledAt - 0.01)
     assert.equal(s.layer.dataset.phase, 'opening')
     s.opening.time(art.settledAt)
@@ -113,6 +131,61 @@ test('each new desktop document starts once from frame zero after its window sig
     assert.equal(s.body.children.length, 0)
     assert.equal(s.scheduled(), 0)
   }
+})
+
+test('the original SVG is revealed on the video clock, including pauses, seeks and resuming playback', () => {
+  const s = scene()
+  s.opening.dispatchEvent(new Event('playing'))
+  const mask = s.stage.children.at(-1).firstElementChild
+  const sweep = mask.animations[0]
+  const wordmark = s.svg.animations[0]
+  assert.ok(sweep, 'the original SVG layer starts its reveal with the film')
+  assert.equal(mask.firstElementChild, s.svg)
+  assert.equal(sweep.timing, wordmark.timing)
+  assert.equal(sweep.timing.delay, art.sweep.startAt * 1000)
+  assert.equal(Math.round(sweep.timing.duration), 1800)
+  assert.equal(sweep.timing.fill, 'both')
+  for (const [i, x] of art.sweep.positions.entries()) {
+    assert.equal(sweep.frames[i].transform, 'translate3d(' + x + '%, 0, 0)')
+    assert.equal(wordmark.frames[i].transform, 'translate3d(' + -x + '%, 0, 0)')
+    assert.ok([sweep, wordmark].every(a => a.frames[i].easing === 'step-end'))
+  }
+  const mid = art.sweep.startAt + 0.9
+  s.opening.time(mid)
+  assert.equal(sweep.currentTime, mid * 1000)
+  assert.equal(wordmark.currentTime, sweep.currentTime)
+  assert.equal(sweep.playState, 'running')
+  s.opening.dispatchEvent(new Event('waiting'))
+  assert.equal(sweep.playState, 'paused')
+  s.opening.dispatchEvent(new Event('playing'))
+  assert.equal(sweep.playState, 'running')
+  s.opening.pause()
+  s.opening.time(art.sweep.startAt + 0.25)
+  assert.equal(sweep.playState, 'paused')
+  assert.equal(sweep.currentTime, s.opening.currentTime * 1000)
+  s.opening.playbackRate = 0.5
+  s.opening.play()
+  s.opening.dispatchEvent(new Event('playing'))
+  assert.equal(sweep.playbackRate, 0.5)
+  s.opening.time(art.exitAt)
+  assert.equal(sweep.playState, 'idle')
+  assert.equal(wordmark.playState, 'idle')
+  assert.equal(s.layer.dataset.phase, 'brand')
+  s.opening.currentTime = mid
+  s.opening.seeking = true
+  s.opening.dispatchEvent(new Event('seeking'))
+  const resumed = mask.animations.at(-1)
+  assert.notEqual(resumed, sweep)
+  assert.equal(resumed.playState, 'paused')
+  s.opening.seeking = false
+  s.opening.dispatchEvent(new Event('seeked'))
+  assert.equal(resumed.currentTime, mid * 1000)
+  assert.equal(resumed.playState, 'running')
+  s.ready()
+  assert.equal(s.layer.dataset.phase, 'opening', 'a seek back into the sweep restores its hold')
+  s.hide()
+  assert.equal(resumed.playState, 'idle')
+  assert.equal(s.layer.dataset.still, '')
 })
 
 test('a delayed host readiness callback observes the video clock without restarting the hold', () => {
@@ -144,7 +217,8 @@ test('slow starts preload the water, display the last opening frame until loop p
 test('reduced motion requests no moving media and holds the embedded still', () => {
   const s = scene({ reduced: true })
   assert.equal(s.layer.dataset.still, '')
-  assert.equal(s.stage.children.at(-1).children[0], s.svg)
+  assert.equal(s.stage.children.at(-1).firstElementChild.firstElementChild, s.svg)
+  assert.equal(s.svg.animations.length, 0)
   assert.equal(s.opening.src, undefined)
   assert.equal(s.ripples.src, undefined)
   s.ready(); s.step(719)
