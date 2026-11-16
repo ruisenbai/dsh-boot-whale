@@ -2,7 +2,7 @@ import assert from 'node:assert/strict'
 import { test } from 'node:test'
 import { apply } from '../index.js'
 
-test('injects the opening before client boot and serves the atlas', () => {
+test('injects the scalable wordmark before client boot and serves the atlas', () => {
   let collect
   let route
   const dispose = () => {}
@@ -25,6 +25,7 @@ test('injects the opening before client boot and serves the atlas', () => {
   const [style, logo, runtime] = table
   assert.equal(logo.placement, 'body')
   assert.match(logo.html, /^<template id="dsbw-logo-template"><svg\b/)
+  assert.match(logo.html, /<svg\b[^>]*\bviewBox="0 0 187 24"/)
   assert.match(logo.html, /role="img" aria-label="DeepSeek Harness"/)
   const logoColors = new Set(Array.from(logo.html.matchAll(/fill="var\((--[\w-]+),/g), match => match[1]))
   for (const color of logoColors) assert.ok(style.text.includes(`${color}:`), `Missing theme color ${color}`)

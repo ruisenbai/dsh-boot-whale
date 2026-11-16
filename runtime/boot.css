@@ -26,6 +26,11 @@ body[data-ds-dark-theme] .dsbw-boot {
   pointer-events: none;
 }
 
+.dsbw-whale,
+.dsbw-brand {
+  grid-area: 1 / 1;
+}
+
 .dsbw-whale {
   display: block;
   width: min(1200px, 94vw, 120vh);
@@ -36,8 +41,9 @@ body[data-ds-dark-theme] .dsbw-boot {
 }
 
 .dsbw-brand {
-  display: none;
-  width: min(187px, calc(100% - 32px));
+  width: min(336px, 80vw);
+  opacity: 0;
+  visibility: hidden;
   user-select: none;
 }
 
@@ -47,21 +53,32 @@ body[data-ds-dark-theme] .dsbw-boot {
   height: auto;
 }
 
-.dsbw-boot:not([data-phase="opening"]) .dsbw-whale {
+.dsbw-boot[data-phase="crossfade"] .dsbw-whale {
+  opacity: 0;
+}
+
+.dsbw-boot:is([data-phase="brand"], [data-phase="leaving"]) .dsbw-whale {
   display: none;
 }
 
 .dsbw-boot:not([data-phase="opening"]) .dsbw-brand {
-  display: block;
+  opacity: 1;
+  visibility: visible;
 }
 
 @keyframes dsbw-brand-breathe {
-  0%, 100% { opacity: 1; }
-  50% { opacity: 0.68; }
+  0%, 100% { opacity: 1; transform: scale(1); }
+  50% { opacity: 0.55; transform: scale(0.95); }
 }
 
 @media (prefers-reduced-motion: no-preference) {
-  .dsbw-brand { animation: dsbw-brand-breathe 2.4s ease-in-out infinite; }
+  .dsbw-boot[data-phase="crossfade"] :is(.dsbw-whale, .dsbw-brand) {
+    transition: opacity var(--dsbw-crossfade-duration) ease-out;
+  }
+
+  .dsbw-boot:is([data-phase="brand"], [data-phase="leaving"]) .dsbw-brand svg {
+    animation: dsbw-brand-breathe var(--dsbw-breath-duration) ease-in-out infinite;
+  }
 }
 
 @media (prefers-reduced-motion: reduce) {

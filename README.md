@@ -1,6 +1,8 @@
 # dsh-boot-whale
 
-A full-screen dot whale opens DeepSeek Harness. When the whale finishes, the **deepseek HARNESS** logo appears for at least 1.2 seconds. It gently dims and brightens while the application loads, then fades into the ready interface. With reduced motion enabled, a static logo replaces the whale and its pulse. The opening uses DSH’s light or dark background and fits narrow windows. Startup failures immediately reveal DSH’s error report.
+A full-screen dot whale opens DeepSeek Harness. As the last ripple fades, the **deepseek HARNESS** logo appears in a 300 ms crossfade. The logo breathes by dimming and shrinking slightly, then grows back to full brightness. It completes one 1.6-second cycle before the workspace appears and keeps breathing if loading takes longer.
+
+The logo is up to 336 pixels wide and fits within 80% of a narrow window. The opening follows DSH’s light or dark background. With reduced motion enabled, it shows a static logo. Startup failures immediately reveal DSH’s error report.
 
 ## Install
 

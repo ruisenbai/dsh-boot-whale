@@ -6,12 +6,14 @@ import vm from 'node:vm'
 const runtime = readFileSync(new URL('../runtime/boot.js', import.meta.url), 'utf8')
 
 function scene({ desktop = false, reducedMotion = false, rootInitiallyMissing = false } = {}) {
+  const drawnFrames = []
   class Element {
     constructor(tag) {
       this.tag = tag
       this.children = []
       this.dataset = {}
       this.attributes = new Map()
+      this.style = { setProperty() {} }
       this.clientWidth = tag === 'canvas' ? 840 : 0
       this.clientHeight = tag === 'canvas' ? 472.5 : 0
       this.textContent = ''
@@ -31,7 +33,8 @@ function scene({ desktop = false, reducedMotion = false, rootInitiallyMissing = 
     }
     getContext() {
       return {
-        setTransform() {}, clearRect() {}, drawImage() {}, fillRect() {},
+        setTransform() {}, clearRect() {}, fillRect() {},
+        drawImage(_image, x, y) { drawnFrames.push(y / 216 * 12 + x / 384) },
         imageSmoothingEnabled: false, globalAlpha: 1, globalCompositeOperation: 'source-over', fillStyle: '',
       }
     }
@@ -111,7 +114,7 @@ function scene({ desktop = false, reducedMotion = false, rootInitiallyMissing = 
   assert.equal(overlay?.dataset.dshBootWhale, '')
 
   return {
-    overlay, body, boot, imageInstances,
+    overlay, body, boot, imageInstances, drawnFrames,
     attachRoot() {
       rootExists = true
       for (const observer of observers) observer.callback()
@@ -140,7 +143,7 @@ function scene({ desktop = false, reducedMotion = false, rootInitiallyMissing = 
   }
 }
 
-test('keeps the opening textless until its first breach ends, then holds the wordmark', () => {
+test('plays only visible atlas frames and blends the final ripple into the wordmark', () => {
   const s = scene({ desktop: true })
   assert.equal(s.overlay.dataset.phase, 'opening')
   assert.equal(s.imageInstances[0].src, undefined)
@@ -148,8 +151,17 @@ test('keeps the opening textless until its first breach ends, then holds the wor
   assert.match(s.imageInstances[0].src, /boot-whale-atlas.*\.webp$/)
   s.load()
   s.step(0)
+  s.step(16)
+  s.step(42)
+  assert.deepEqual(s.drawnFrames, [8, 9])
+  s.step(3900)
   assert.equal(s.overlay.dataset.phase, 'opening')
-  s.step(5700)
+  s.step(4030)
+  assert.equal(s.overlay.dataset.phase, 'crossfade')
+  s.step(4329)
+  assert.equal(s.overlay.dataset.phase, 'crossfade')
+  assert.equal(s.drawnFrames.at(-1), 111)
+  s.step(4331)
   s.advance(5000)
   assert.equal(s.overlay.dataset.phase, 'brand')
   s.ready()
@@ -158,15 +170,16 @@ test('keeps the opening textless until its first breach ends, then holds the wor
   assert.equal(s.body.children.length, 0)
 })
 
-test('a fast launch gives the logo its full hold after the whale finishes', () => {
+test('a fast launch gives the fully revealed logo one complete breath', () => {
   const s = scene()
   s.load()
   s.step(0)
   s.ready()
   assert.equal(s.overlay.dataset.phase, 'opening')
-  s.step(5700)
+  s.step(4030)
+  s.step(4331)
   assert.equal(s.overlay.dataset.phase, 'brand')
-  s.advance(1199)
+  s.advance(1599)
   assert.equal(s.overlay.dataset.phase, 'brand')
   s.advance(1)
   assert.equal(s.overlay.dataset.phase, 'leaving')
@@ -174,11 +187,25 @@ test('a fast launch gives the logo its full hold after the whale finishes', () =
   assert.equal(s.body.children.length, 0)
 })
 
+test('a delayed animation frame still allows the entire crossfade', () => {
+  const s = scene()
+  s.load()
+  s.step(0)
+  s.step(3800)
+  s.step(4900)
+  assert.equal(s.overlay.dataset.phase, 'crossfade')
+  s.step(5199)
+  assert.equal(s.overlay.dataset.phase, 'crossfade')
+  s.step(5201)
+  assert.equal(s.overlay.dataset.phase, 'brand')
+})
+
 test('reduced motion shows the wordmark immediately and failures reveal the native report', () => {
   const s = scene({ reducedMotion: true })
   assert.equal(s.overlay.dataset.phase, 'brand')
+  assert.deepEqual(s.drawnFrames, [])
   s.fail()
-  s.advance(1200)
+  s.advance(1600)
   assert.equal(s.body.children.length, 0)
 })
 
@@ -189,7 +216,7 @@ test('an image failure shows the wordmark until the application is ready', () =>
   s.advance(500)
   s.ready()
   assert.equal(s.overlay.dataset.phase, 'brand')
-  s.advance(700)
+  s.advance(1100)
   assert.equal(s.overlay.dataset.phase, 'leaving')
 })
 
@@ -200,7 +227,8 @@ test('served HTML can inject the opening before the application root is parsed',
   s.ready()
   s.load()
   s.step(0)
-  s.step(5700)
-  s.advance(1200)
+  s.step(4030)
+  s.step(4331)
+  s.advance(1600)
   assert.equal(s.overlay.dataset.phase, 'leaving')
 })

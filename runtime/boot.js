@@ -5,10 +5,20 @@
   if (document.body === null || logoTemplate === null) return
   globalThis.__DSH_BOOT_WHALE_STARTED__ = true
 
+  // The 5.7-second source atlas has ink only in frames 8 through 111, inclusive.
+  const atlas = { width: 384, height: 216, columns: 12, frames: 137, firstVisible: 8, lastVisible: 111 }
+  const frameDuration = 5700 / atlas.frames
+  const duration = (atlas.lastVisible - atlas.firstVisible + 1) * frameDuration
+  const crossfadeDuration = 300
+  const crossfadeAt = duration - crossfadeDuration
+  const breathDuration = 1600
+
   const overlay = document.createElement('div')
   overlay.className = 'dsbw-boot'
   overlay.dataset.phase = 'opening'
   overlay.dataset.dshBootWhale = ''
+  overlay.style.setProperty('--dsbw-crossfade-duration', `${crossfadeDuration}ms`)
+  overlay.style.setProperty('--dsbw-breath-duration', `${breathDuration}ms`)
 
   const canvas = document.createElement('canvas')
   canvas.className = 'dsbw-whale'
@@ -21,9 +31,6 @@
   overlay.append(canvas, brand)
   document.body.append(overlay)
 
-  const atlas = { width: 384, height: 216, columns: 12, frames: 137 }
-  const duration = 5700
-  const minimumBrandDuration = 1200
   const image = new Image()
   const context = canvas.getContext('2d')
   const motion = matchMedia('(prefers-reduced-motion: reduce)')
@@ -31,8 +38,8 @@
   let appReady = false
   let shown = false
   let disposed = false
-  let loaded = false
   let startedAt
+  let lastPainted = -1
   let frame = 0
   let imageTimeout = 0
   let playbackTimeout = 0
@@ -76,8 +83,12 @@
     exitTimeout = window.setTimeout(remove, motion.matches ? 0 : 420)
   }
 
+  function playingWhale() {
+    return !disposed && (overlay.dataset.phase === 'opening' || overlay.dataset.phase === 'crossfade')
+  }
+
   function finish() {
-    if (disposed || overlay.dataset.phase !== 'opening') return
+    if (!playingWhale()) return
     cancelAnimationFrame(frame)
     clearTimeout(imageTimeout)
     clearTimeout(playbackTimeout)
@@ -85,7 +96,7 @@
     brandTimeout = window.setTimeout(() => {
       brandTimeout = 0
       leaveWhenReady()
-    }, minimumBrandDuration)
+    }, breathDuration)
   }
 
   function checkHost() {
@@ -104,7 +115,7 @@
   }
 
   function resize() {
-    if (disposed || overlay.dataset.phase !== 'opening' || context === null) return
+    if (!playingWhale() || context === null) return
     width = canvas.clientWidth
     height = canvas.clientHeight
     if (width === 0 || height === 0) return
@@ -113,23 +124,20 @@
     canvas.height = Math.round(height * density)
     context.setTransform(density, 0, 0, density, 0, 0)
     context.imageSmoothingEnabled = false
+    lastPainted = -1
   }
 
-  function paint(now) {
-    if (context === null || !loaded || width === 0 || height === 0) return
-    const progress = Math.min(1, (now - startedAt) / duration)
-    const index = Math.min(atlas.frames - 1, Math.floor(progress * atlas.frames))
+  function paint(index) {
+    if (width === 0 || height === 0 || index === lastPainted) return
+    lastPainted = index
     const x = (index % atlas.columns) * atlas.width
     const y = Math.floor(index / atlas.columns) * atlas.height
     const scale = Math.min(width / atlas.width, height / atlas.height)
     const left = (width - atlas.width * scale) / 2
     const top = (height - atlas.height * scale) / 2
-    const fade = Math.min(1, progress * 30, (1 - progress) * 10)
     context.clearRect(0, 0, width, height)
-    context.globalAlpha = fade
     context.drawImage(image, x, y, atlas.width, atlas.height,
       left, top, atlas.width * scale, atlas.height * scale)
-    context.globalAlpha = 1
     context.globalCompositeOperation = 'source-in'
     context.fillStyle = getComputedStyle(canvas).color
     context.fillRect(0, 0, width, height)
@@ -137,12 +145,18 @@
   }
 
   function tick(now) {
-    if (disposed || overlay.dataset.phase !== 'opening') return
+    if (!playingWhale()) return
     if (document.hidden || motion.matches) { finish(); return }
     if (width === 0 || height === 0) resize()
     startedAt ??= now
-    if (now - startedAt >= duration) { finish(); return }
-    paint(now)
+    if (overlay.dataset.phase === 'opening' && now - startedAt >= crossfadeAt) {
+      // Give the dissolve its full duration even if the renderer missed its first frame.
+      startedAt = now - crossfadeAt
+      overlay.dataset.phase = 'crossfade'
+    }
+    const elapsed = now - startedAt
+    if (elapsed >= duration) { finish(); return }
+    paint(atlas.firstVisible + Math.floor(elapsed / frameDuration))
     frame = requestAnimationFrame(tick)
   }
 
@@ -166,7 +180,6 @@
         finish()
         return
       }
-      loaded = true
       resize()
       playbackTimeout = window.setTimeout(finish, duration + 2000)
       frame = requestAnimationFrame(tick)
